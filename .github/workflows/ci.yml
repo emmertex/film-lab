@@ -1,0 +1,30 @@
+name: ci
+
+on:
+  push:
+    # Branches only: a release tag runs these checks through release.yml.
+    branches: ["**"]
+  pull_request:
+  workflow_call:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+      - name: fmt
+        run: |
+          cargo fmt --all --check
+          cargo fmt --all --check --manifest-path crates/photocraft/Cargo.toml
+      - name: clippy
+        run: |
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo clippy --manifest-path crates/photocraft/Cargo.toml --target wasm32-unknown-unknown -- -D warnings
+      - name: test
+        run: cargo test --workspace
+      - name: photocraft plug-in
+        run: crates/photocraft/build.sh

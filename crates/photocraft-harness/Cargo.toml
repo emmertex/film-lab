@@ -1,0 +1,20 @@
+[package]
+name = "film-lab-photocraft-harness"
+description = "Host-side checks for the PhotoCraft plug-in: builds crates/photocraft for wasm32 and drives its ABI with wasmi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde_json = { workspace = true }
+wasmi = { workspace = true }
+
+[dev-dependencies]
+# Synthesises negatives for the tests and the `synthetic_negative` example.
+film-lab-core = { workspace = true }
+libm = { workspace = true }
+png = { workspace = true }

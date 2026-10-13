@@ -1,0 +1,30 @@
+[package]
+name = "film-lab-photocraft"
+description = "Film Lab for PhotoCraft: a sandboxed WebAssembly filter plug-in (PhotoCraft plug-in ABI v1)"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+publish = false
+
+# Not a member of the repository workspace: it builds for wasm32-unknown-unknown only (no_std, no
+# allocator, no imports), exactly like PhotoCraft's own `examples/plugins/invert-rs`.
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+film-lab-core = { path = "../core" }
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+
+# Speed over size: the host interprets the module, so every instruction in the per-pixel loop
+# costs time, and the module stays a few dozen kilobytes either way.
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

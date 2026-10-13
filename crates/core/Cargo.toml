@@ -1,0 +1,14 @@
+[package]
+name = "film-lab-core"
+description = "Film-negative conversion maths shared by the LightCraft and PhotoCraft integrations (no_std, no allocator)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# Pure-Rust libm: `powf` and friends are std-only, and this crate runs inside a no_std wasm module.
+libm = { workspace = true }

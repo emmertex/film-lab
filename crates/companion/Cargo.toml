@@ -1,0 +1,25 @@
+[package]
+name = "film-lab-companion"
+description = "Whole-image analysis and batch conversion for the Film Lab PhotoCraft plug-in, driving photocraft-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "film-lab"
+path = "src/main.rs"
+
+[dependencies]
+film-lab-core = { workspace = true }
+serde_json = { workspace = true }
+# Scan decoding (pure Rust): TIFF, PNG, JPEG.
+image = { workspace = true }
+
+[dev-dependencies]
+libm = { workspace = true }
+# Builds the current plug-in for the end-to-end test instead of trusting a stale module.
+film-lab-photocraft-harness = { path = "../photocraft-harness" }

@@ -1,0 +1,95 @@
+name: release
+
+# Push a tag `vX.Y.Z` matching `crates/photocraft/Cargo.toml` to publish a GitHub release with the
+# plug-in module. Run it by hand (Actions › release › Run workflow) to build the module as a
+# workflow artifact without releasing anything.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    needs: check
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: version
+        id: version
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 --manifest-path crates/photocraft/Cargo.toml \
+            | jq -r '.packages[] | select(.name == "film-lab-photocraft") | .version')
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match crates/photocraft/Cargo.toml (v$version)"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: build
+        run: crates/photocraft/build.sh --locked
+      - name: package
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir dist
+          cp crates/photocraft/target/wasm32-unknown-unknown/release/film_lab_photocraft.wasm dist/
+          # The manifest is a string in the data segment: the module must carry the version released.
+          grep -q -a "\"version\": \"$VERSION\"" dist/film_lab_photocraft.wasm \
+            || { echo "::error::the module's manifest does not say version $VERSION"; exit 1; }
+          cd dist
+          sha256sum film_lab_photocraft.wasm > film_lab_photocraft.wasm.sha256
+          cat film_lab_photocraft.wasm.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: film-lab-${{ steps.version.outputs.version }}
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: film-lab-${{ needs.build.outputs.version }}
+          path: dist
+      - name: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          # A version with a suffix (0.2.0-rc.1) is a pre-release.
+          case "$VERSION" in *-*) pre=--prerelease ;; *) pre= ;; esac
+          cat > notes.md <<EOF
+          Film Lab $VERSION for PhotoCraft (plug-in ABI v1).
+
+          Install: download \`film_lab_photocraft.wasm\` and either run
+          \`plugin.install {"path": "/abs/path/film_lab_photocraft.wasm"}\` or copy it into the
+          folder set in Edit › Preferences › Plug-ins. It appears as **Filter › Plug-ins › Film Lab…**.
+          Replacing the file upgrades it; the name stays the same across versions.
+
+          Check the download: \`shasum -a 256 -c film_lab_photocraft.wasm.sha256\`.
+          EOF
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Film Lab $VERSION" \
+            --notes-file notes.md \
+            --generate-notes \
+            $pre

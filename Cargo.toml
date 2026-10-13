@@ -1,0 +1,39 @@
+[workspace]
+resolver = "3"
+# One crate per host app next to the shared core: `crates/photocraft` today; `crates/lightcraft` once
+# LightCraft has a plug-in API.
+members = ["crates/*"]
+# `crates/photocraft` is the PhotoCraft WebAssembly plug-in: `no_std`, built for wasm32-unknown-unknown
+# only, its own workspace (as PhotoCraft's own `examples/plugins/invert-rs` is). Build it with
+# `crates/photocraft/build.sh`; the `photocraft-harness` tests build and exercise it.
+exclude = ["crates/photocraft"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+publish = false
+
+[workspace.dependencies]
+# internal
+film-lab-core = { path = "crates/core" }
+
+# external (pure Rust only, like the craft apps)
+serde_json = "1"
+libm = "0.2"
+# Harness tests and the synthetic-negative example only (pure Rust).
+png = "0.18"
+# The companion decodes scans (pure Rust decoders only).
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "tiff", "gif"] }
+# The interpreter PhotoCraft embeds (same feature set as `photocraft/crates/plugins`).
+wasmi = { version = "2.0", default-features = false, features = ["std", "validate", "stable", "portable-dispatch"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+
+[profile.dev.package."*"]
+opt-level = 2
