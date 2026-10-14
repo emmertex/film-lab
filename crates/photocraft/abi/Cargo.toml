@@ -1,0 +1,13 @@
+[package]
+name = "film-lab-photocraft"
+description = "What the Film Lab PhotoCraft plug-ins share: the ABI v1 exports, the band, the measurement block and the conversion loop"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+film-lab-core = { workspace = true }

@@ -1,27 +1,28 @@
-[package]
-name = "film-lab-photocraft"
-description = "Film Lab for PhotoCraft: a sandboxed WebAssembly filter plug-in (PhotoCraft plug-in ABI v1)"
+# The Film Lab PhotoCraft plug-ins: one WebAssembly module per plug-in, since an ABI v1 module is
+# one manifest and one menu entry. Not a member of the repository workspace: everything here builds
+# for wasm32-unknown-unknown only (no_std, no allocator, no imports), exactly like PhotoCraft's own
+# `examples/plugins/invert-rs`, and `.cargo/config.toml` makes that the default target.
+[workspace]
+resolver = "3"
+members = ["abi", "convert", "advanced"]
+
+# One version for every module: the release tag matches it, and each manifest reports it.
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.90"
 publish = false
 
-# Not a member of the repository workspace: it builds for wasm32-unknown-unknown only (no_std, no
-# allocator, no imports), exactly like PhotoCraft's own `examples/plugins/invert-rs`.
-[workspace]
-
-[lib]
-crate-type = ["cdylib"]
-
-[dependencies]
+[workspace.dependencies]
 film-lab-core = { path = "../core" }
+film-lab-photocraft = { path = "abi" }
 
-[lints.clippy]
+[workspace.lints.clippy]
 dbg_macro = "warn"
 todo = "warn"
 
 # Speed over size: the host interprets the module, so every instruction in the per-pixel loop
-# costs time, and the module stays a few dozen kilobytes either way.
+# costs time, and a module stays a few dozen kilobytes either way.
 [profile.release]
 opt-level = 3
 lto = true

@@ -1,11 +1,11 @@
 //! Writes a synthetic colour negative (`negative.png`) and the scene it was made from
-//! (`expected.png`) into a directory, to run the plug-in on through PhotoCraft itself:
+//! (`expected.png`) into a directory, to run the advanced plug-in on through PhotoCraft itself:
 //!
 //! ```sh
 //! cargo run -p film-lab-photocraft-harness --example synthetic_negative -- /tmp/neg
 //! photocraft-cli run /tmp/neg/negative.png \
-//!   --cmd plugin.install --params '{"path": ".../film_lab_photocraft.wasm"}' \
-//!   --cmd plugin.run --params '{"id": "io.github.smyrgeorge.film-lab", "params": {"base_r": 205, "base_g": 162, "base_b": 110, "tone": "linear"}}' \
+//!   --cmd plugin.install --params '{"path": ".../film_lab_convert_advanced.wasm"}' \
+//!   --cmd plugin.run --params '{"id": "io.github.smyrgeorge.film-lab.convert-advanced", "params": {"filmBaseRed": 205, "filmBaseGreen": 162, "filmBaseBlue": 110, "toneCurve": "Linear"}}' \
 //!   --out /tmp/neg/positive.png
 //! ```
 //!
@@ -82,7 +82,7 @@ fn main() {
     write(&dir.join("expected.png"), &pos);
     println!("wrote {}/negative.png and expected.png ({W}×{H})", dir.display());
     println!(
-        "film base: base_r={:.1} base_g={:.1} base_b={:.1}",
+        "film base (the advanced dialog's Film Base Red / Green / Blue): {:.0} {:.0} {:.0}",
         color::srgb_encode(BASE[0]) * 255.0,
         color::srgb_encode(BASE[1]) * 255.0,
         color::srgb_encode(BASE[2]) * 255.0

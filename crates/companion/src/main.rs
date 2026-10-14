@@ -4,11 +4,11 @@
 
 use std::path::{Path, PathBuf};
 
-use film_lab_companion::{AnalyzeOptions, WbMode, analyze, convert_one, convert_roll, find_photocraft_cli, find_plugin};
+use film_lab_companion::{AnalyzeOptions, Plugin, WbMode, analyze, convert_one, convert_roll, find_photocraft_cli, find_plugin};
 use serde_json::{Map, Value};
 
 const USAGE: &str = "\
-film-lab app [--dialog] [app options] [analysis options] [--set KEY=VALUE…]
+film-lab app [--dialog] [--advanced] [app options] [analysis options] [--set KEY=VALUE…]
 film-lab analyze <scan> [analysis options]
 film-lab convert <scan | folder> -o <file | folder> [analysis options] [conversion options]
 film-lab compare <ours> <reference>
@@ -38,13 +38,19 @@ Analysis options:
   --master FILE       convert: analyse this scan and apply its analysis to the whole folder
 
 Conversion options:
-  --preset NAME       the film preset, spelled any way: standard (default), portra 160,
-                      portra 400, ektar 100, gold 200, colorplus 200, ultramax 400,
-                      superia 400, c200, pro 400h, cinestill 800, monochrome
+  --preset NAME       the film preset, spelled any way: Standard (default), Portra 160,
+                      Portra 400, Ektar 100, Gold 200, ColorPlus 200, UltraMax 400,
+                      Superia 400, C200, Pro 400H, CineStill 800, Monochrome
   --set KEY=VALUE     a plug-in parameter (exposure=0.5, brightness=-10, temp=8, …); repeatable
+  --advanced          Film Lab: Convert Negative (Advanced) instead of Convert Negative: the film
+                      base picked from the scan (--set filmBaseRed=… --set filmBaseGreen=…
+                      --set filmBaseBlue=…, the border's colour as the Info panel shows it), tone,
+                      colour and sharpening controls; a menu takes its option as the dialog
+                      shows it (--set 'toneCurve=Cinematic Rich')
   --format EXT        output format for a folder (png, jpg, tif, …; default: as the input)
   --photocraft-cli P  the photocraft-cli binary (default: $PHOTOCRAFT_CLI, then the PATH)
-  --plugin P          the plug-in .wasm (default: $FILM_LAB_WASM, then the repository build)
+  --plugin P          the plug-in .wasm (default: $FILM_LAB_WASM, then the repository's build
+                      of the plug-in chosen)
   -h, --help          this text
 
 compare prints per-channel statistics of both images, a 4 × 4 grid of mean colours and their
@@ -69,6 +75,7 @@ struct Args {
     format: Option<String>,
     cli: Option<PathBuf>,
     plugin: Option<PathBuf>,
+    which: Plugin,
     size: u32,
     connect: String,
     token: Option<String>,
@@ -87,6 +94,7 @@ fn parse(args: &[String]) -> Result<Option<Args>, String> {
         format: None,
         cli: None,
         plugin: None,
+        which: Plugin::Convert,
         size: 11,
         connect: film_lab_companion::app::DEFAULT_ADDR.to_string(),
         token: None,
@@ -135,6 +143,7 @@ fn parse(args: &[String]) -> Result<Option<Args>, String> {
             "--token-file" => a.token_file = Some(PathBuf::from(value(&mut i)?)),
             "--root" => a.root = PathBuf::from(value(&mut i)?),
             "--dialog" => a.dialog = true,
+            "--advanced" => a.which = Plugin::Advanced,
             other if other.starts_with('-') => return Err(format!("unknown option `{other}`\n\n{USAGE}")),
             _ => a.positional.push(arg.clone()),
         }
@@ -156,7 +165,8 @@ fn run(args: Vec<String>) -> Result<(), String> {
             dialog: a.dialog,
             analyze: a.options.clone(),
             set: a.set.clone(),
-            plugin: find_plugin(a.plugin.as_deref())?,
+            plugin: a.which,
+            wasm: find_plugin(a.plugin.as_deref(), a.which)?,
         };
         let r = film_lab_companion::app::convert_in_app(&o)?;
         println!("{}", serde_json::to_string_pretty(&r).map_err(|e| e.to_string())?);
@@ -178,7 +188,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
         "convert" => {
             let out = a.out.as_deref().ok_or("convert needs -o <file | folder>")?;
             let cli = find_photocraft_cli(a.cli.as_deref());
-            let wasm = find_plugin(a.plugin.as_deref())?;
+            let wasm = find_plugin(a.plugin.as_deref(), a.which)?;
             let master = a.master.as_deref().or((!target.is_dir()).then_some(target)).map(open).transpose()?;
             if target.is_dir() {
                 let analysed = match master {
@@ -191,13 +201,13 @@ fn run(args: Vec<String>) -> Result<(), String> {
                 let mut params = levels.plugin_params();
                 params.extend(a.set.clone());
                 eprintln!("roll measurement from {} pixels: {}", levels.samples, Value::Object(levels.measurement()));
-                convert_roll(&cli, &wasm, &levels, target, out, &params, a.format.as_deref())
+                convert_roll(&cli, a.which, &wasm, &levels, target, out, &params, a.format.as_deref())
             } else {
                 let levels = analyze(master.as_ref().ok_or("no scan")?, &a.options)?;
                 let mut params = levels.plugin_params();
                 params.extend(a.set.clone());
                 eprintln!("measurement from {} pixels: {}", levels.samples, Value::Object(levels.measurement()));
-                convert_one(&cli, &wasm, &levels, target, out, &params)
+                convert_one(&cli, a.which, &wasm, &levels, target, out, &params)
             }
         }
         "sample" => {

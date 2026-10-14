@@ -1,30 +1,31 @@
-//! Starts PhotoCraft with the plug-in installed and the sample negative open, for trying Film
+//! Starts PhotoCraft with the plug-ins installed and the sample negative open, for trying Film
 //! Lab by hand.
 //!
 //! ```sh
-//! scripts/manual-test.sh                  # builds the plug-in, fetches the sample, runs this
+//! scripts/manual-test.sh                  # builds the plug-ins, fetches the sample, runs this
 //! scripts/manual-test.sh --plain          # the bare module, with no measurement inside
 //! cargo run -p film-lab-companion --example manual_test -- --negative my-scan.tif
 //! ```
 //!
 //! Launches PhotoCraft on its control channel with a work folder as its automation roots,
-//! installs the plug-in from the repository's build with the companion's measurement of the
-//! negative written inside (so Filter › Plug-ins › Film Lab… converts the way `film-lab app`
-//! does; `--plain` installs the bare module, which falls back to the preset's base), opens the
-//! negative, and stays attached until the app quits (Ctrl-C quits both). While it runs, the
+//! installs both plug-ins (Convert Negative and Convert Negative (Advanced)) from the repository's
+//! build with the companion's measurement of the negative written inside (so Filter › Plug-ins ›
+//! Film Lab: Convert Negative… converts the way `film-lab app` does; `--plain` installs the bare
+//! modules, which fall back to the preset's base, or to the base picked in the advanced dialog),
+//! opens the negative, and stays attached until the app quits (Ctrl-C quits both). While it runs, the
 //! companion reaches the same instance: `film-lab app --dialog --root WORK --token-file
 //! WORK/token`.
 //!
 //! Options: `--photocraft BIN` (or `$PHOTOCRAFT`; default: `../photocraft/target/release/photocraft`
 //! next to this repository, then the installed app), `--negative FILE` (default: the Ektar
 //! frame from `scripts/fetch-samples.sh`), `--work DIR` (default `target/manual`), `--port N`
-//! (default 7878), `--plugin FILE` (default: the repository's build, or `$FILM_LAB_WASM`),
+//! (default 7878), `--plugin FILE` (installs that one module instead of the repository's builds),
 //! `--plain`, and the measurement's options `--border N` and `--wb auto|neutral|warm|cool`.
 
 use std::path::{Path, PathBuf};
 
 use film_lab_companion::app::{Control, DEFAULT_ADDR, Launched, base64, find_photocraft, launch};
-use film_lab_companion::{AnalyzeOptions, WbMode, analyze, find_plugin};
+use film_lab_companion::{AnalyzeOptions, Plugin, WbMode, analyze, find_plugin};
 use serde_json::json;
 
 struct Args {
@@ -84,13 +85,21 @@ fn run() -> Result<(), String> {
         return Err(format!("{} is missing: run scripts/fetch-samples.sh, or pass --negative FILE", a.negative.display()));
     }
     let photocraft = find_photocraft(a.photocraft.as_deref())?;
-    let plugin = find_plugin(a.plugin.as_deref())?;
-    let mut module = std::fs::read(&plugin).map_err(|e| format!("cannot read the plug-in {}: {e}", plugin.display()))?;
+    let paths = match &a.plugin {
+        Some(p) => vec![p.clone()],
+        None => Plugin::ALL.into_iter().map(|p| find_plugin(None, p)).collect::<Result<_, _>>()?,
+    };
+    let mut modules = Vec::new();
+    for path in &paths {
+        modules.push(std::fs::read(path).map_err(|e| format!("cannot read the plug-in {}: {e}", path.display()))?);
+    }
     if !a.plain {
         let img = image::open(&a.negative).map_err(|e| format!("cannot read {}: {e}", a.negative.display()))?;
         let levels = analyze(&img, &a.analyze)?;
         println!("measurement from {} pixels: {}", levels.samples, serde_json::Value::Object(levels.measurement()));
-        module = levels.embed(&module)?;
+        for m in &mut modules {
+            *m = levels.embed(m)?;
+        }
     }
 
     // The negative goes into the work folder, the only place the app may open files from.
@@ -101,7 +110,7 @@ fn run() -> Result<(), String> {
 
     println!("starting {} on port {}, automation root {}", photocraft.display(), a.port, work.display());
     let mut app = launch(&photocraft, &work, a.port)?;
-    if let Err(e) = prepare(&app, &name, &module) {
+    if let Err(e) = prepare(&app, &name, &modules) {
         app.child.kill().ok();
         app.child.wait().ok();
         return Err(e);
@@ -109,10 +118,12 @@ fn run() -> Result<(), String> {
 
     println!("PhotoCraft is running with Film Lab installed and {name} open.");
     if a.plain {
-        println!("  Filter › Plug-ins › Film Lab… (or ⌘F, then its name) opens the dialog; with no measurement in the");
-        println!("  module it uses the preset's base. The companion measures and installs afresh:");
+        println!("  Filter › Plug-ins › Film Lab: Convert Negative… (or ⌘F, then its name) opens the dialog; with no");
+        println!("  measurement in the module it uses the preset's base. In Convert Negative (Advanced)…, base_r/g/b");
+        println!("  take the border's colour as the Info panel shows it. The companion measures and installs afresh:");
     } else {
-        println!("  Filter › Plug-ins › Film Lab… (or ⌘F, then its name) converts with the measurement of {name}.");
+        println!("  Filter › Plug-ins › Film Lab: Convert Negative… (or ⌘F, then its name) converts with the measurement");
+        println!("  of {name}; Convert Negative (Advanced)… also has it, and base_r/g/b override its film base.");
         println!("  The companion reaches this instance too:");
     }
     let connect = if app.addr == DEFAULT_ADDR { String::new() } else { format!(" --connect {}", a.port) };
@@ -123,10 +134,12 @@ fn run() -> Result<(), String> {
     Ok(())
 }
 
-/// Installs `module` and opens `name` in the launched app.
-fn prepare(app: &Launched, name: &str, module: &[u8]) -> Result<(), String> {
+/// Installs `modules` and opens `name` in the launched app.
+fn prepare(app: &Launched, name: &str, modules: &[Vec<u8>]) -> Result<(), String> {
     let mut c = Control::connect(&app.addr, &app.token)?;
-    c.execute("plugin.install", json!({"data": base64(module), "replace": true}))?;
+    for module in modules {
+        c.execute("plugin.install", json!({"data": base64(module), "replace": true}))?;
+    }
     c.call("app.open", json!({"path": name}))?;
     c.call("ui.set", json!({"fit": true})).ok();
     Ok(())

@@ -1,7 +1,7 @@
 name: release
 
 # Push a tag `vX.Y.Z` matching `crates/photocraft/Cargo.toml` to publish a GitHub release with the
-# plug-in module. Run it by hand (Actions › release › Run workflow) to build the module as a
+# plug-in modules. Run it by hand (Actions › release › Run workflow) to build the modules as a
 # workflow artifact without releasing anything.
 on:
   push:
@@ -46,13 +46,15 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           mkdir dist
-          cp crates/photocraft/target/wasm32-unknown-unknown/release/film_lab_photocraft.wasm dist/
-          # The manifest is a string in the data segment: the module must carry the version released.
-          grep -q -a "\"version\": \"$VERSION\"" dist/film_lab_photocraft.wasm \
-            || { echo "::error::the module's manifest does not say version $VERSION"; exit 1; }
+          for name in film_lab_convert film_lab_convert_advanced; do
+            cp "crates/photocraft/target/wasm32-unknown-unknown/release/$name.wasm" dist/
+            # The manifest is a string in the data segment: a module must carry the version released.
+            grep -q -a "\"version\": \"$VERSION\"" "dist/$name.wasm" \
+              || { echo "::error::$name.wasm's manifest does not say version $VERSION"; exit 1; }
+          done
           cd dist
-          sha256sum film_lab_photocraft.wasm > film_lab_photocraft.wasm.sha256
-          cat film_lab_photocraft.wasm.sha256
+          sha256sum ./*.wasm | sed 's| \./| |' > SHA256SUMS
+          cat SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: film-lab-${{ steps.version.outputs.version }}
@@ -80,12 +82,19 @@ jobs:
           cat > notes.md <<EOF
           Film Lab $VERSION for PhotoCraft (plug-in ABI v1).
 
-          Install: download \`film_lab_photocraft.wasm\` and either run
-          \`plugin.install {"path": "/abs/path/film_lab_photocraft.wasm"}\` or copy it into the
-          folder set in Edit › Preferences › Plug-ins. It appears as **Filter › Plug-ins › Film Lab…**.
-          Replacing the file upgrades it; the name stays the same across versions.
+          Two plug-ins, one module each; install either or both:
 
-          Check the download: \`shasum -a 256 -c film_lab_photocraft.wasm.sha256\`.
+          - \`film_lab_convert.wasm\`: **Filter › Plug-ins › Film Lab: Convert Negative…**, a film
+            preset and six sliders.
+          - \`film_lab_convert_advanced.wasm\`: **Filter › Plug-ins › Film Lab: Convert Negative
+            (Advanced)…**, with the film base picked from the border (Film Base Red / Green / Blue,
+            as the Info panel shows it), tone, white balance, a gray point, colour and sharpening.
+
+          Install: run \`plugin.install {"path": "/abs/path/film_lab_convert.wasm"}\`, or copy the
+          files into the folder set in Edit › Preferences › Plug-ins. Replacing a file upgrades it;
+          the names stay the same across versions.
+
+          Check the downloads: \`shasum -a 256 -c SHA256SUMS\`.
           EOF
           gh release create "$GITHUB_REF_NAME" dist/* \
             --repo "$GITHUB_REPOSITORY" \

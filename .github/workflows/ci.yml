@@ -26,5 +26,5 @@ jobs:
           cargo clippy --manifest-path crates/photocraft/Cargo.toml --target wasm32-unknown-unknown -- -D warnings
       - name: test
         run: cargo test --workspace
-      - name: photocraft plug-in
+      - name: photocraft plug-ins
         run: crates/photocraft/build.sh

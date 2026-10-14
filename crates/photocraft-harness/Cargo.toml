@@ -1,6 +1,6 @@
 [package]
 name = "film-lab-photocraft-harness"
-description = "Host-side checks for the PhotoCraft plug-in: builds crates/photocraft for wasm32 and drives its ABI with wasmi"
+description = "Host-side checks for the PhotoCraft plug-ins: builds crates/photocraft for wasm32 and drives their ABI with wasmi"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -1,12 +1,31 @@
 # Film Lab for PhotoCraft
 
-A WebAssembly filter plug-in for PhotoCraft's plug-in ABI v1 (`photocraft/docs/plugins.md`),
+WebAssembly filter plug-ins for PhotoCraft's plug-in ABI v1 (`photocraft/docs/plugins.md`),
 built like the upstream example `examples/plugins/invert-rs`: `no_std`, no allocator, no imports.
-It converts a scanned film negative on the active layer into a positive: a film preset and six
-sliders.
+Each converts a scanned film negative on the active layer into a positive.
 
-This crate is **its own cargo workspace** (not a member of the repository workspace): it only
-builds for `wasm32-unknown-unknown`, and `.cargo/config.toml` makes that the default target here.
+An ABI v1 module is one manifest and one menu entry, so each plug-in is its own module:
+
+| Module | Menu entry (Filter › Plug-ins) | Id | Dialog |
+|---|---|---|---|
+| `film_lab_convert.wasm` | Film Lab: Convert Negative… | `io.github.smyrgeorge.film-lab.convert` | a film preset and six sliders |
+| `film_lab_convert_advanced.wasm` | Film Lab: Convert Negative (Advanced)… | `io.github.smyrgeorge.film-lab.convert-advanced` | the film base picked from the border, tone, white balance, a neutral sample, colour and sharpening |
+
+## Layout
+
+This directory is **its own cargo workspace** (not a member of the repository workspace): it
+only builds for `wasm32-unknown-unknown`, and `.cargo/config.toml` makes that the default target
+here. The modules share one version (`[workspace.package]`), which every manifest reports.
+
+```text
+abi/        film-lab-photocraft: the four exports (`plugin!`), the band, the measurement block,
+            the conversion loop and sharpening, shared by every plug-in
+convert/    film-lab-convert → film_lab_convert.wasm: its manifest and its parameters
+advanced/   film-lab-convert-advanced → film_lab_convert_advanced.wasm: the same, with every control
+```
+
+A new plug-in is a crate next to `convert/`: a manifest, and a function from its parameters to
+`film_lab_core` settings, handed to `film_lab_photocraft::plugin!`.
 
 ## Build
 
@@ -15,17 +34,19 @@ rustup target add wasm32-unknown-unknown
 ./build.sh        # cargo build --release --target wasm32-unknown-unknown
 ```
 
-Output: `target/wasm32-unknown-unknown/release/film_lab_photocraft.wasm`.
+Output: `target/wasm32-unknown-unknown/release/film_lab_convert.wasm` and
+`film_lab_convert_advanced.wasm`. A release (`.github/workflows/release.yml`) attaches both.
 
 ## Install
 
 ```text
-plugin.install {"path": "/abs/path/film_lab_photocraft.wasm"}
+plugin.install {"path": "/abs/path/film_lab_convert.wasm"}
+plugin.install {"path": "/abs/path/film_lab_convert_advanced.wasm"}
 ```
 
-Or copy the `.wasm` into the folder set in Edit › Preferences › Plug-ins (with *Use Additional
-Plug-ins Folder* on). It then appears as **Filter › Plug-ins › Film Lab…** with a generated
-dialog and live preview.
+Or copy the `.wasm` files into the folder set in Edit › Preferences › Plug-ins (with *Use
+Additional Plug-ins Folder* on). Each appears under **Filter › Plug-ins** with a generated
+dialog and live preview. Install either or both; the ids differ, so neither replaces the other.
 
 ## Workflow
 
@@ -34,20 +55,24 @@ Screenshots of these steps in the app are in the [repository README](../../READM
 **Automatic** (the companion, `crates/companion`): with PhotoCraft started on its control channel
 and the scan open, `film-lab app` measures the whole document, writes the measurement into the
 module it installs, and runs the plug-in; with `--dialog` it opens the dialog instead, for
-choosing the preset and adjusting the sliders with the live preview before OK.
+choosing the preset and adjusting the sliders with the live preview before OK. `--advanced` does
+the same with the advanced plug-in.
 
-**In the dialog alone**: Filter › Plug-ins › Film Lab…, pick a preset, adjust. The dialog
-carries whatever measurement the module holds (the companion's last one); with none, the
-preset's typical mask colour stands in for the film base.
+**In the dialog alone**: Filter › Plug-ins › Film Lab: Convert Negative…, pick a preset, adjust.
+The dialog carries whatever measurement the module holds (the companion's last one); with none,
+the preset's typical mask colour stands in for the film base. In the advanced dialog, type the
+border's colour into Film Base Red / Green / Blue instead.
 
 A conversion is one undo step; on a smart object it is recorded as a smart filter and re-run on
 re-render.
 
 ## Parameters
 
+### Convert Negative
+
 | Parameter | Range | What |
 |---|---|---|
-| `preset` | `standard` (default), `portra 160`, `portra 400`, `ektar 100`, `gold 200`, `colorplus 200`, `ultramax 400`, `superia 400`, `c200`, `pro 400h`, `cinestill 800`, `monochrome` | The film's character: layer contrast, mask colour, tone profile, colour model, saturation, warmth, toning (`crates/core/src/preset.rs`) |
+| `preset` | Standard (default), Portra 160, Portra 400, Ektar 100, Gold 200, ColorPlus 200, UltraMax 400, Superia 400, C200, Pro 400H, CineStill 800, Monochrome | The film's character: layer contrast, mask colour, tone profile, colour model, saturation, warmth, toning (`crates/core/src/preset.rs`) |
 | `exposure` | −5..5 stops | Overall brightness |
 | `brightness` | −50..50 | Mid-tone gamma; black and white stay put |
 | `contrast` | −50..50 | Added to the preset's contrast |
@@ -56,30 +81,56 @@ re-render.
 
 Not in the dialog, but read from the JSON when a host passes them: `base_r/g/b` (0..255, the Info
 panel's values on the unexposed border, replacing the preset's base when the module holds no
-measurement), `neutral_r/g/b` (a scan
-colour that should come out grey), `range` (stops rendered between black and white; 3 by
-default, 6 is scene-linear), and `encoding` (`srgb` or `linear`; otherwise 8- and 16-bit
-documents are sRGB, 32-bit linear).
+measurement), `neutral_r/g/b` (a scan colour that should come out grey), `range` (stops rendered
+between black and white; 3 by default, 6 is scene-linear), and `encoding` (`srgb` or `linear`;
+otherwise 8- and 16-bit documents are sRGB, 32-bit linear).
+
+### Convert Negative (Advanced)
+
+The same preset and sliders, and in dialog order (the dialog's label, then the key):
+
+| Control | Key | Range | What |
+|---|---|---|---|
+| Film Base Red / Green / Blue | `filmBaseRed`, `filmBaseGreen`, `filmBaseBlue` | whole numbers 0..255, 0 = unset | The film base: the unexposed border as the Info panel shows it (sample it with the Eyedropper, or `film-lab sample`). Set, it wins over the measured base and the preset's; a measurement's white point and balance still apply. A grey document reads Film Base Red |
+| Tone Curve | `toneCurve` | From Preset (default), Lab Standard, Lab Soft, Lab Hard, Lab Highlight Soft, Lab Highlight Hard, Lab Shadow Soft, Lab Shadow Hard, Linear, Linear Deep, Linear Flat, Cinematic, Cinematic Flat, Cinematic Rich | The tone curve, instead of the preset's |
+| Highlights, Shadows | `highlights`, `shadows` | −50..50 | Brighten the lighter / darker tones |
+| Whites, Blacks | `whites`, `blacks` | −50..50 | Move the white / black point |
+| Fade, Glow | `fade`, `glow` | −100..100 | Lift black for smoother shadows / compress the highlights into a shoulder |
+| Dynamic Range | `dynamicRange` | 1..10 stops, default 3 | Scene stops between black and white; fewer renders mid-tones brighter, 6 is scene-linear |
+| White Balance | `whiteBalance` | As Shot, Warm, Cool, Tungsten Film | A white-balance preset, under Temp and Tint |
+| Gray Point Red / Green / Blue | `grayPointRed`, `grayPointGreen`, `grayPointBlue` | whole numbers 0..255, 0 = unset | A scan colour that should come out grey |
+| Color Look | `colorLook` | From Preset (default), Neutral, Lab Warm, Lab Cool, Print, Clean | The colour model, instead of the preset's |
+| Sharpening, Amount | `sharpening`, `amount` | Off (default), Lab, Scanner; 0..100 % | Output sharpening: Lab leaves grain alone, Scanner sharpens everything. The manifest asks for a pixel of overlap so bands join seamlessly |
+
+Left at its defaults, the advanced plug-in converts exactly as Convert Negative does (the harness
+checks it on every preset, with and without a measurement).
+
+PhotoCraft writes a control's label from its key, capitalising it and splitting camelCase into
+words, and shows a menu option with a space exactly as written. So the keys are camelCase and
+the options are the menu's text, which `advanced/src/lib.rs` maps to the core's values; a key
+named `amount` gets a % unit. Its plug-in dialogs have numbers, checkboxes and lists but no
+colour picker, so a colour is three whole numbers on the Info panel's scale. The harness checks
+every label and option against PhotoCraft's rule.
 
 ### The measurement, or the preset's base
 
 ABI v1 runs every band of the layer (a strip 256 rows tall, up to 1280 px wide for RGB) in a
 fresh instance with no whole-image pass, the dialog's preview included, so anything measured
-from the pixels a band holds differs from band to band and shows as blocks. The plug-in
-therefore measures nothing itself.
+from the pixels a band holds differs from band to band and shows as blocks. The plug-ins
+therefore measure nothing themselves.
 
 - **With a measurement** in the module (the companion's: film base, black and white points,
   balance, all measured on the whole scan) nothing depends on the band, so large layers
   convert without seams.
-- **Without one**, the preset's typical mask colour is the base and a fixed range of stops
-  leads to white: identical on every band, seam-free, right when the scanning setup matches.
+- **Without one**, the preset's typical mask colour (or the base picked in the advanced dialog)
+  is the base and a fixed range of stops leads to white: identical on every band, seam-free, right when the scanning setup matches.
 
 ### The measurement block
 
 The host drops parameters a manifest doesn't declare, so the measurement can't be a hidden
-parameter. The module has a 512-byte block starting with `FILMLAB-MEASURE-1:`; the companion
+parameter. Every module has a 512-byte block starting with `FILMLAB-MEASURE-1:`; the companion
 writes the measurement there as JSON (`base_*`, `black_*`, `white_*` as scan values 0..255,
-`balance_*`) before installing the module, and the plug-in reads it. The harness tests patch the
+`balance_*`) before installing the module, and the plug-in reads it (`abi/`). The harness tests patch the
 block the same way.
 
 ## The conversion
@@ -117,10 +168,13 @@ and the core's tests the accuracy.
 
 ## Test
 
-`cargo test -p film-lab-photocraft-harness` (from the repository root) builds this crate and
-drives its exports with wasmi, the interpreter PhotoCraft embeds: ABI version, the manifest and
-its seven controls, round trips of negatives synthesised from the core's own film model (a typed
-base, the embedded measurement and the fallback without one, greyscale, linear documents),
-every preset and slider, the neutral sample, hostile parameters, and the
-instruction budget. The `synthetic_negative` example writes a negative to run through
-`photocraft-cli` by hand.
+`cargo test -p film-lab-photocraft-harness` (from the repository root) builds these modules and
+drives their exports with wasmi, the interpreter PhotoCraft embeds. `tests/abi.rs` checks every
+module: ABI version, a manifest the host accepts (distinct ids, the workspace's version, legal
+parameter names), one measurement block, hostile input and the instruction budget.
+`tests/convert.rs` round-trips negatives synthesised from the core's own film model through
+Convert Negative (a typed base, the embedded measurement and the fallback without one, greyscale,
+linear documents, every preset and slider, the neutral sample). `tests/advanced.rs` checks that
+the advanced plug-in at its defaults matches Convert Negative, that a picked base neutralises a
+wrong mask and wins over the measured one, and its tone, colour and sharpening controls. The
+`synthetic_negative` example writes a negative to run through `photocraft-cli` by hand.

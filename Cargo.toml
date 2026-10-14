@@ -3,9 +3,10 @@ resolver = "3"
 # One crate per host app next to the shared core: `crates/photocraft` today; `crates/lightcraft` once
 # LightCraft has a plug-in API.
 members = ["crates/*"]
-# `crates/photocraft` is the PhotoCraft WebAssembly plug-in: `no_std`, built for wasm32-unknown-unknown
-# only, its own workspace (as PhotoCraft's own `examples/plugins/invert-rs` is). Build it with
-# `crates/photocraft/build.sh`; the `photocraft-harness` tests build and exercise it.
+# `crates/photocraft` holds the PhotoCraft WebAssembly plug-ins, one module each: `no_std`, built for
+# wasm32-unknown-unknown only, their own workspace (as PhotoCraft's own `examples/plugins/invert-rs`
+# is). Build them with `crates/photocraft/build.sh`; the `photocraft-harness` tests build and
+# exercise them.
 exclude = ["crates/photocraft"]
 
 [workspace.package]

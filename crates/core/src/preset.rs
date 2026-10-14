@@ -16,7 +16,7 @@ use crate::{Look, NEGATIVE_GAMMA, Params, Tone, color, finite};
 /// One recipe.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Preset {
-    /// The parameter value and menu entry.
+    /// The parameter value and its menu entry, as shown ([`Preset::parse`] takes any spelling).
     pub name: &'static str,
     /// Density per log-exposure of the red, green and blue layers.
     pub gamma: [f32; 3],
@@ -46,7 +46,7 @@ pub struct Preset {
 pub const PRESETS: [Preset; 12] = [
     // A neutral lab scan: even layer contrast, neutral colour, the lab tone profile.
     Preset {
-        name: "standard",
+        name: "Standard",
         gamma: [NEGATIVE_GAMMA; 3],
         base: [0.80, 0.52, 0.36],
         tone: Tone::LabStandard,
@@ -63,7 +63,7 @@ pub const PRESETS: [Preset; 12] = [
     // Kodak Portra 160: the gentlest of the family. Low contrast, pastel saturation, warm
     // natural skin, soft warm highlights.
     Preset {
-        name: "portra 160",
+        name: "Portra 160",
         gamma: [0.56, 0.58, 0.60],
         base: [0.79, 0.53, 0.37],
         tone: Tone::LabSoft,
@@ -80,7 +80,7 @@ pub const PRESETS: [Preset; 12] = [
     // Kodak Portra 400: the portrait standard. Moderate contrast, warm natural skin, muted but
     // full colour, warm highlights, a touch of cool in the shadows.
     Preset {
-        name: "portra 400",
+        name: "Portra 400",
         gamma: [0.58, 0.60, 0.63],
         base: [0.79, 0.53, 0.37],
         tone: Tone::LabSoft,
@@ -97,7 +97,7 @@ pub const PRESETS: [Preset; 12] = [
     // Kodak Ektar 100: the saturated one. Steep layers, strong separation, vivid reds and
     // blues, clean neutrals, contrast to match.
     Preset {
-        name: "ektar 100",
+        name: "Ektar 100",
         gamma: [0.63, 0.65, 0.69],
         base: [0.78, 0.50, 0.33],
         tone: Tone::LabStandard,
@@ -114,7 +114,7 @@ pub const PRESETS: [Preset; 12] = [
     // Kodak Gold 200: golden. Warm yellow highlights, warm neutrals, saturated reds and
     // yellows, the minilab rendering.
     Preset {
-        name: "gold 200",
+        name: "Gold 200",
         gamma: [0.60, 0.62, 0.66],
         base: [0.82, 0.54, 0.35],
         tone: Tone::LabStandard,
@@ -131,7 +131,7 @@ pub const PRESETS: [Preset; 12] = [
     // Kodak ColorPlus 200: the everyday stock. Warm like Gold but softer and less saturated,
     // warm shadows, a little faded: the look of old snapshots.
     Preset {
-        name: "colorplus 200",
+        name: "ColorPlus 200",
         gamma: [0.58, 0.60, 0.63],
         base: [0.83, 0.55, 0.36],
         tone: Tone::LabSoft,
@@ -147,7 +147,7 @@ pub const PRESETS: [Preset; 12] = [
     },
     // Kodak UltraMax 400: the punchy consumer stock. Saturated, contrasty, warm, strong blues.
     Preset {
-        name: "ultramax 400",
+        name: "UltraMax 400",
         gamma: [0.61, 0.63, 0.67],
         base: [0.81, 0.53, 0.35],
         tone: Tone::LabStandard,
@@ -164,7 +164,7 @@ pub const PRESETS: [Preset; 12] = [
     // Fujifilm Superia X-TRA 400: Fuji's greens. Cooler than Kodak, a steeper green layer,
     // vivid, teal shadows, a touch of magenta in skin.
     Preset {
-        name: "superia 400",
+        name: "Superia 400",
         gamma: [0.60, 0.64, 0.66],
         base: [0.76, 0.50, 0.34],
         tone: Tone::LabStandard,
@@ -181,7 +181,7 @@ pub const PRESETS: [Preset; 12] = [
     // Fujifilm C200: clean and cool. Soft contrast, restrained saturation, cool neutrals, a
     // green-cyan lean in the shadows.
     Preset {
-        name: "c200",
+        name: "C200",
         gamma: [0.58, 0.61, 0.63],
         base: [0.77, 0.51, 0.35],
         tone: Tone::LabSoft,
@@ -198,7 +198,7 @@ pub const PRESETS: [Preset; 12] = [
     // Fujifilm Pro 400H: the pastel wedding stock. Flat layers, airy highlights, mint greens,
     // cyan shadows, soft skin; made to be overexposed.
     Preset {
-        name: "pro 400h",
+        name: "Pro 400H",
         gamma: [0.55, 0.58, 0.60],
         base: [0.78, 0.52, 0.36],
         tone: Tone::LabSoft,
@@ -216,7 +216,7 @@ pub const PRESETS: [Preset; 12] = [
     // colour, teal-blue shadows against warm orange highlights. (The halation it is known for
     // is not a colour and is not modelled.)
     Preset {
-        name: "cinestill 800",
+        name: "CineStill 800",
         gamma: [0.55, 0.57, 0.60],
         base: [0.80, 0.52, 0.36],
         tone: Tone::Cinematic,
@@ -232,7 +232,7 @@ pub const PRESETS: [Preset; 12] = [
     },
     // Black-and-white: a paper-like straight line with some contrast, no colour.
     Preset {
-        name: "monochrome",
+        name: "Monochrome",
         gamma: [0.65; 3],
         base: [0.74; 3],
         tone: Tone::Linear,
@@ -313,7 +313,7 @@ mod tests {
 
     #[test]
     fn presets_parse_and_the_first_is_standard() {
-        assert_eq!(Preset::default_preset().name, "standard");
+        assert_eq!(Preset::default_preset().name, "Standard");
         for p in &PRESETS {
             assert_eq!(Preset::parse(p.name).map(|q| q.name), Some(p.name));
             assert!(p.gamma.iter().all(|g| (0.4..=0.8).contains(g)), "{}", p.name);
@@ -325,19 +325,22 @@ mod tests {
     #[test]
     fn names_parse_in_any_spelling() {
         for (spelling, name) in [
-            ("portra 400", "portra 400"),
-            ("portra400", "portra 400"),
-            ("PORTRA_400", "portra 400"),
-            ("Pro 400H", "pro 400h"),
-            ("CineStill-800", "cinestill 800"),
+            ("portra 400", "Portra 400"),
+            ("portra400", "Portra 400"),
+            ("PORTRA_400", "Portra 400"),
+            ("pro 400h", "Pro 400H"),
+            ("CineStill-800", "CineStill 800"),
         ] {
             assert_eq!(Preset::parse(spelling).map(|p| p.name), Some(name), "{spelling}");
         }
         assert!(Preset::parse("kodachrome").is_none() && Preset::parse("").is_none());
-        assert!(
-            PRESETS.iter().all(|p| p.name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == ' ')),
-            "names are lower-case words and numbers, which a host capitalises for the menu"
-        );
+        // A host shows a choice with a space exactly as written (PhotoCraft does), so the names
+        // are the menu's text: capitalised words and numbers, distinct however they are spelled.
+        for p in &PRESETS {
+            assert!(p.name.starts_with(|c: char| c.is_ascii_uppercase()), "{}", p.name);
+            assert!(p.name.chars().all(|c| c.is_ascii_alphanumeric() || c == ' '), "{}", p.name);
+            assert_eq!(PRESETS.iter().filter(|q| name_key(q.name).eq(name_key(p.name))).count(), 1, "{}", p.name);
+        }
     }
 
     #[test]

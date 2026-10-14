@@ -6,9 +6,9 @@
 //! ```
 //!
 //! Launches PhotoCraft with its control channel on a work folder, opens the sample negative,
-//! has the companion measure it and install the plug-in with the measurement, finds Film Lab in
-//! the command search, opens its dialog from there, confirms, and screenshots each step; then
-//! writes `docs/images/*.jpg` and `docs/images/flow.gif`.
+//! has the companion measure it and install both plug-ins with the measurement, finds Film Lab in
+//! the command search (both entries), opens Convert Negative's dialog from there, confirms, and
+//! screenshots each step; then writes `docs/images/*.jpg` and `docs/images/flow.gif`.
 //! Options: `--photocraft BIN` (or `$PHOTOCRAFT`; default: `../photocraft/target/release/photocraft`
 //! next to this repository, then the installed app), `--negative FILE` (default: the Ektar frame
 //! from `scripts/fetch-samples.sh`), `--out DIR` (default `docs/images`), `--work DIR` (default
@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use film_lab_companion::app::{AppOptions, Control, convert_in_app, find_photocraft, launch};
-use film_lab_companion::{AnalyzeOptions, WbMode, find_plugin};
+use film_lab_companion::{AnalyzeOptions, Plugin, WbMode, find_plugin};
 use image::codecs::gif::{GifEncoder, Repeat};
 use image::{Delay, Frame, ImageReader, imageops::FilterType};
 use serde_json::{Map, json};
@@ -129,26 +129,29 @@ fn drive(a: &Args, work: &Path, addr: &str, token: &str) -> Result<(), String> {
     c.call("ui.set", json!({"fit": true}))?;
     shot(&mut c, "01-negative.png")?;
 
-    // 2. The companion measures the document and installs the plug-in with the measurement
-    // inside. Its dialog option opens the dialog straight away; here that dialog is cancelled
-    // so the next steps show the menu route to the same dialog.
-    let o = AppOptions {
-        addr: addr.to_string(),
-        token: token.to_string(),
-        root: work.to_path_buf(),
-        dialog: true,
-        analyze: AnalyzeOptions { border_percent: 8.0, wb: WbMode::Neutral, ..AnalyzeOptions::default() },
-        set: Map::new(),
-        plugin: find_plugin(None)?,
-    };
-    let r = convert_in_app(&o)?;
-    if let Some(d) = r.get("dialog") {
-        c.call("ui.dialog.cancel", json!({"dialog": d}))?;
+    // 2. The companion measures the document and installs both plug-ins with the measurement
+    // inside. Its dialog option opens a dialog straight away; here each is cancelled so the next
+    // steps show the menu route to the same dialog.
+    for plugin in Plugin::ALL {
+        let o = AppOptions {
+            addr: addr.to_string(),
+            token: token.to_string(),
+            root: work.to_path_buf(),
+            dialog: true,
+            analyze: AnalyzeOptions { border_percent: 8.0, wb: WbMode::Neutral, ..AnalyzeOptions::default() },
+            set: Map::new(),
+            plugin,
+            wasm: find_plugin(None, plugin)?,
+        };
+        let r = convert_in_app(&o)?;
+        if let Some(d) = r.get("dialog") {
+            c.call("ui.dialog.cancel", json!({"dialog": d}))?;
+        }
+        settle(800);
     }
-    settle(800);
 
-    // 3. Once installed, the command search (⌘F) finds Film Lab… under Filter › Plug-ins; Enter
-    // opens its dialog, which carries the companion's measurement.
+    // 3. Once installed, the command search (⌘F) finds both under Filter › Plug-ins; Enter opens
+    // the first, Convert Negative, whose dialog carries the companion's measurement.
     c.call("ui.menu.invoke", json!({"id": "edit.search"}))?;
     settle(500);
     c.call("ui.type", json!({"text": "film lab"}))?;
@@ -164,8 +167,8 @@ fn drive(a: &Args, work: &Path, addr: &str, token: &str) -> Result<(), String> {
         Some(d) => d,
         None => {
             // The search didn't run it (a different top result): the menu entry does.
-            eprintln!("note: the search did not open Film Lab; opening it from the Filter menu instead");
-            c.call("ui.menu.invoke", json!({"id": format!("plugin.filter.{}", film_lab_companion::PLUGIN_ID)}))?;
+            eprintln!("note: the search did not open Convert Negative; opening it from the Filter menu instead");
+            c.call("ui.menu.invoke", json!({"id": format!("plugin.filter.{}", Plugin::Convert.id())}))?;
             settle(1000);
             open_dialog(&mut c)?.ok_or("Film Lab's dialog did not open")?
         }

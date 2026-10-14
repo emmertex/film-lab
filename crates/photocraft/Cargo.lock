@@ -3,6 +3,22 @@
 version = 4
 
 [[package]]
+name = "film-lab-convert"
+version = "0.1.0"
+dependencies = [
+ "film-lab-core",
+ "film-lab-photocraft",
+]
+
+[[package]]
+name = "film-lab-convert-advanced"
+version = "0.1.0"
+dependencies = [
+ "film-lab-core",
+ "film-lab-photocraft",
+]
+
+[[package]]
 name = "film-lab-core"
 version = "0.1.0"
 dependencies = [

@@ -35,10 +35,11 @@ before OK. `--connect` picks another port; the token also comes from
 | `--black-clip N`, `--white-clip N` | percent of pixels allowed below black / above white; default 0.3 |
 | `--wb auto\|neutral\|warm\|cool` | `auto` (default): black and white neutral per channel, the scene's own colour kept; `neutral`: the channel medians balanced too (per-channel gammas, `balance_*`), which over-corrects scenes dominated by one colour; `warm` / `cool`: auto plus a temperature offset |
 | `--master FILE` | for a folder: the scan whose analysis applies to the whole roll (the "match" workflow) |
-| `--preset NAME` | the film preset, spelled any way (`portra400`, `Portra 400`): `standard`, `portra 160`, `portra 400`, `ektar 100`, `gold 200`, `colorplus 200`, `ultramax 400`, `superia 400`, `c200`, `pro 400h`, `cinestill 800`, `monochrome` |
-| `--set KEY=VALUE` | a slider on top: `exposure=0.5`, `brightness=-10`, `contrast=10`, `temp=8`, `tint=-4`, `saturation=10` |
+| `--preset NAME` | the film preset, spelled any way (`portra400`, `Portra 400`): Standard, Portra 160, Portra 400, Ektar 100, Gold 200, ColorPlus 200, UltraMax 400, Superia 400, C200, Pro 400H, CineStill 800, Monochrome |
+| `--set KEY=VALUE` | a slider on top: `exposure=0.5`, `brightness=-10`, `contrast=10`, `temp=8`, `tint=-4`, `saturation=10`; with `--advanced` any of its controls too, by key, a menu's option as the dialog shows it (`filmBaseRed=205`, `'toneCurve=Cinematic Rich'`, `sharpening=Lab`, …) |
+| `--advanced` | install and run Film Lab: Convert Negative (Advanced) instead of Convert Negative: the film base picked from the border (`filmBaseRed/Green/Blue`, which win over the measured base), tone, white balance, colour and sharpening |
 | `--format EXT` | output format for a folder |
-| `--photocraft-cli P`, `--plugin P` | where `photocraft-cli` and the `.wasm` are; also `$PHOTOCRAFT_CLI`, `$FILM_LAB_WASM` |
+| `--photocraft-cli P`, `--plugin P` | where `photocraft-cli` and the `.wasm` are; also `$PHOTOCRAFT_CLI`, `$FILM_LAB_WASM` (default: the repository's build of the plug-in chosen) |
 
 The analysis samples a regular grid of at most a million pixels, builds the same histogram the
 plug-in uses, and reads the film base (a high quantile of brightness), black (the quantile the

@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Map, Value, json};
 
-use crate::{AnalyzeOptions, PLUGIN_ID, analyze};
+use crate::{AnalyzeOptions, Plugin, analyze};
 
 /// PhotoCraft's default control port.
 pub const DEFAULT_ADDR: &str = "127.0.0.1:7878";
@@ -31,7 +31,9 @@ pub struct AppOptions {
     pub analyze: AnalyzeOptions,
     /// Plug-in parameters on top of the analysis.
     pub set: Map<String, Value>,
-    pub plugin: PathBuf,
+    /// Which plug-in to install and run, and its module.
+    pub plugin: Plugin,
+    pub wasm: PathBuf,
 }
 
 /// A JSON-lines connection to PhotoCraft's control channel, authenticated.
@@ -117,19 +119,19 @@ pub fn convert_in_app(o: &AppOptions) -> Result<Value, String> {
     params.extend(o.set.clone());
 
     // The measurement travels inside the module, so the dialog never shows it.
-    let bytes = std::fs::read(&o.plugin).map_err(|e| format!("cannot read the plug-in {}: {e}", o.plugin.display()))?;
+    let bytes = std::fs::read(&o.wasm).map_err(|e| format!("cannot read the plug-in {}: {e}", o.wasm.display()))?;
     let module = levels.embed(&bytes)?;
     c.execute("plugin.install", json!({"data": base64(&module), "replace": true}))?;
     let measurement = levels.measurement();
     if o.dialog {
-        let r = c.call("ui.menu.invoke", json!({"id": format!("plugin.filter.{PLUGIN_ID}")}))?;
+        let r = c.call("ui.menu.invoke", json!({"id": format!("plugin.filter.{}", o.plugin.id())}))?;
         let dialog = r.get("dialog").cloned().ok_or("the plug-in's dialog did not open")?;
         for (k, v) in &params {
             c.call("ui.dialog.set", json!({"dialog": dialog, "field": k, "value": v}))?;
         }
         Ok(json!({"dialog": dialog, "samples": levels.samples, "measurement": measurement, "params": params}))
     } else {
-        let r = c.execute("plugin.run", json!({"id": PLUGIN_ID, "params": params}))?;
+        let r = c.execute("plugin.run", json!({"id": o.plugin.id(), "params": params}))?;
         Ok(json!({"applied": r, "samples": levels.samples, "measurement": measurement, "params": params}))
     }
 }

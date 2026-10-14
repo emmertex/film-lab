@@ -6,7 +6,7 @@ use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
 
 use film_lab_companion::app::{AppOptions, convert_in_app};
-use film_lab_companion::{AnalyzeOptions, PLUGIN_ID};
+use film_lab_companion::{AnalyzeOptions, Plugin};
 use film_lab_core::{RANGE_STOPS, color, film};
 use image::{ImageBuffer, Rgb};
 use serde_json::{Map, Value, json};
@@ -54,9 +54,9 @@ fn stub(root: std::path::PathBuf) -> (String, Log) {
                                 assert!(data.len() > 100, "the module went over as base64");
                                 let text = String::from_utf8_lossy(&decode64(data)).into_owned();
                                 assert!(text.contains("\"white_r\":"), "the module carries the measurement: {text}");
-                                Ok(json!({"id": PLUGIN_ID}))
+                                Ok(json!({"id": "installed"}))
                             }
-                            Some("plugin.run") => Ok(json!({"layer": 2, "plugin": PLUGIN_ID})),
+                            Some("plugin.run") => Ok(json!({"layer": 2, "plugin": params["params"]["id"]})),
                             other => Err(format!("unknown command {other:?}")),
                         },
                         "ui.menu.invoke" => Ok(json!({"dialog": 7})),
@@ -111,7 +111,7 @@ fn options(addr: &str, root: &std::path::Path, dialog: bool) -> AppOptions {
     module.extend(std::iter::repeat_n(b' ', film_lab_companion::MEASUREMENT_LEN - film_lab_companion::MEASUREMENT_MARKER.len()));
     std::fs::write(&plugin, module).unwrap();
     let mut set = Map::new();
-    set.insert("preset".into(), json!("ektar 100"));
+    set.insert("preset".into(), json!("Ektar 100"));
     AppOptions {
         addr: addr.to_string(),
         token: TOKEN.into(),
@@ -119,7 +119,8 @@ fn options(addr: &str, root: &std::path::Path, dialog: bool) -> AppOptions {
         dialog,
         analyze: AnalyzeOptions { border_percent: 0.0, ..AnalyzeOptions::default() },
         set,
-        plugin,
+        plugin: Plugin::Convert,
+        wasm: plugin,
     }
 }
 
@@ -133,9 +134,9 @@ fn converts_the_open_document_with_a_whole_image_analysis() {
     std::fs::create_dir_all(&root).unwrap();
     let (addr, log) = stub(root.clone());
     let r = convert_in_app(&options(&addr, &root, false)).unwrap();
-    assert_eq!(r["applied"]["plugin"], PLUGIN_ID);
+    assert_eq!(r["applied"]["plugin"], Plugin::Convert.id());
     let p = &r["params"];
-    assert_eq!(p["preset"], "ektar 100");
+    assert_eq!(p["preset"], "Ektar 100");
     assert!(p.get("base_r").is_none(), "the measurement is in the module, not the parameters");
     let base = color::srgb_encode(BASE[0]) * 255.0;
     assert!((r["measurement"]["base_r"].as_f64().unwrap() as f32 - base).abs() < 1.5, "{}", r["measurement"]);
@@ -157,6 +158,24 @@ fn dialog_mode_fills_the_dialog_in() {
     assert!(sets.iter().any(|p| p["field"] == "preset"), "the preset is set in the dialog");
     assert!(!sets.iter().any(|p| p["field"] == "base_r"), "the measurement is not: it is in the module");
     assert!(!log.iter().any(|(m, p)| m == "engine.execute" && p["command"] == "plugin.run"), "no run in dialog mode");
+    std::fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn the_advanced_plugin_is_opened_and_run_by_its_own_id() {
+    let root = std::env::temp_dir().join(format!("film-lab-app-advanced-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let (addr, log) = stub(root.clone());
+    let mut o = options(&addr, &root, false);
+    o.plugin = Plugin::Advanced;
+    let r = convert_in_app(&o).unwrap();
+    assert_eq!(r["applied"]["plugin"], Plugin::Advanced.id());
+    let mut o = options(&addr, &root, true);
+    o.plugin = Plugin::Advanced;
+    convert_in_app(&o).unwrap();
+    let log = log.lock().unwrap();
+    let menu: Vec<&Value> = log.iter().filter(|(m, _)| m == "ui.menu.invoke").map(|(_, p)| &p["id"]).collect();
+    assert_eq!(menu, [&json!(format!("plugin.filter.{}", Plugin::Advanced.id()))]);
     std::fs::remove_dir_all(&root).ok();
 }
 

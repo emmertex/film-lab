@@ -1,9 +1,9 @@
-//! Host-side test harness for the PhotoCraft plug-in (`crates/photocraft`).
+//! Host-side test harness for the PhotoCraft plug-ins (`crates/photocraft`).
 //!
-//! Builds the plug-in for `wasm32-unknown-unknown` and drives its ABI v1 exports through
+//! Builds the plug-ins for `wasm32-unknown-unknown` and drives their ABI v1 exports through
 //! [`wasmi`], the interpreter PhotoCraft itself embeds, so the contract (no imports, the four
 //! exports, the manifest, `pc_alloc`, `pc_filter`) is checked without a PhotoCraft checkout. For
-//! the host's full behaviour (limits, band splitting, selection blend) run the module through
+//! the host's full behaviour (limits, band splitting, selection blend) run a module through
 //! PhotoCraft's `plugin.install` / `plugin.run` or its `photocraft-plugins` crate.
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
@@ -14,22 +14,57 @@ use std::sync::OnceLock;
 
 use wasmi::{Config, Engine, Instance, Linker, Memory, Module, Store, TypedFunc};
 
-/// The plug-in crate (`crates/photocraft`).
+/// The plug-ins' workspace (`crates/photocraft`).
 pub fn plugin_crate_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../photocraft")
 }
 
-/// Builds the plug-in in release mode and returns the `.wasm` path. Built once per process:
-/// tests run in parallel and must not race each other's `cargo build`.
-///
-/// Runs the plug-in crate's own cargo workspace with its own target directory, so an outer
-/// `cargo test` (which holds the lock on the repository's target directory) can't deadlock it.
-pub fn build_plugin() -> Result<PathBuf, String> {
-    static BUILT: OnceLock<Result<PathBuf, String>> = OnceLock::new();
-    BUILT.get_or_init(build_plugin_uncached).clone()
+/// One plug-in module of `crates/photocraft`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Plugin {
+    /// Film Lab: Convert Negative (`crates/photocraft/convert`).
+    Convert,
+    /// Film Lab: Convert Negative (Advanced) (`crates/photocraft/advanced`).
+    Advanced,
 }
 
-fn build_plugin_uncached() -> Result<PathBuf, String> {
+impl Plugin {
+    pub const ALL: [Plugin; 2] = [Plugin::Convert, Plugin::Advanced];
+
+    /// The module's file name.
+    pub fn file_name(self) -> &'static str {
+        match self {
+            Plugin::Convert => "film_lab_convert.wasm",
+            Plugin::Advanced => "film_lab_convert_advanced.wasm",
+        }
+    }
+
+    /// The id its manifest declares.
+    pub fn id(self) -> &'static str {
+        match self {
+            Plugin::Convert => "io.github.smyrgeorge.film-lab.convert",
+            Plugin::Advanced => "io.github.smyrgeorge.film-lab.convert-advanced",
+        }
+    }
+}
+
+/// Builds the plug-ins in release mode and returns the path of `plugin`'s `.wasm`. Built once
+/// per process: tests run in parallel and must not race each other's `cargo build`.
+///
+/// Runs the plug-ins' own cargo workspace with its own target directory, so an outer
+/// `cargo test` (which holds the lock on the repository's target directory) can't deadlock it.
+pub fn build_plugin(plugin: Plugin) -> Result<PathBuf, String> {
+    static BUILT: OnceLock<Result<PathBuf, String>> = OnceLock::new();
+    let dir = BUILT.get_or_init(build_plugins).clone()?;
+    let wasm = dir.join(plugin.file_name());
+    if !wasm.is_file() {
+        return Err(format!("{} was not produced", wasm.display()));
+    }
+    Ok(wasm)
+}
+
+/// Builds every module; the directory they land in.
+fn build_plugins() -> Result<PathBuf, String> {
     let dir = plugin_crate_dir();
     let target_dir = dir.join("target");
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
@@ -44,16 +79,12 @@ fn build_plugin_uncached() -> Result<PathBuf, String> {
         .status()
         .map_err(|e| format!("cannot run cargo: {e}"))?;
     if !status.success() {
-        return Err(format!("building the plug-in failed ({status}); is the wasm32-unknown-unknown target installed?"));
+        return Err(format!("building the plug-ins failed ({status}); is the wasm32-unknown-unknown target installed?"));
     }
-    let wasm = target_dir.join("wasm32-unknown-unknown/release/film_lab_photocraft.wasm");
-    if !wasm.is_file() {
-        return Err(format!("{} was not produced", wasm.display()));
-    }
-    Ok(wasm)
+    Ok(target_dir.join("wasm32-unknown-unknown/release"))
 }
 
-/// The marker that starts the plug-in's measurement block, and the block's size.
+/// The marker that starts a plug-in's measurement block, and the block's size.
 pub const MEASUREMENT_MARKER: &[u8] = b"FILMLAB-MEASURE-1:";
 pub const MEASUREMENT_LEN: usize = 512;
 

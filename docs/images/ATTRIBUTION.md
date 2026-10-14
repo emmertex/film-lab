@@ -5,7 +5,7 @@ ArtCraft Team) converting an openly licensed photograph of a film negative. The 
 
 | Path pattern | Title | Author | Source | Licence | Changes |
 |---|---|---|---|---|---|
-| `docs/images/0*.jpg`, `docs/images/flow.gif` | *Color print film strip 01 - negative* (a strip of Kodak Ektar 100, photographed against daylight) | [LoMit](https://commons.wikimedia.org/wiki/User:LoMit) | [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Color_print_film_strip_01_-_negative.jpg) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | one frame cropped out (frame 22, with the unexposed gaps beside it), converted to a positive by this plug-in, shown inside PhotoCraft |
+| `docs/images/0*.jpg`, `docs/images/flow.gif` | *Color print film strip 01 - negative* (a strip of Kodak Ektar 100, photographed against daylight) | [LoMit](https://commons.wikimedia.org/wiki/User:LoMit) | [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Color_print_film_strip_01_-_negative.jpg) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | one frame cropped out (frame 22, with the unexposed gaps beside it), converted to a positive by the Film Lab plug-ins, shown inside PhotoCraft |
 
 The author's own positive of the same strip, used as the reference the conversion is compared
 with, is [*Color print film strip 03 - positive with tonal correction*](https://commons.wikimedia.org/wiki/File:Color_print_film_strip_03_-_positive_with_tonal_correction.jpg)

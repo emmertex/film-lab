@@ -1,0 +1,17 @@
+[package]
+name = "film-lab-convert-advanced"
+description = "Film Lab: Convert Negative (Advanced), a PhotoCraft filter plug-in (ABI v1): the film base picked from the scan, tone, colour and sharpening"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+film-lab-core = { workspace = true }
+film-lab-photocraft = { workspace = true }

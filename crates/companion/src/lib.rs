@@ -18,8 +18,36 @@ use film_lab_core::{Analysis, Converter, Encoding, Params, Tone, ValueHistogram,
 use image::DynamicImage;
 use serde_json::{Map, Value, json};
 
-/// The plug-in's id in PhotoCraft.
-pub const PLUGIN_ID: &str = "io.github.smyrgeorge.film-lab";
+/// One Film Lab plug-in module (`crates/photocraft`): an ABI v1 module is one menu entry.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Plugin {
+    /// Film Lab: Convert Negative, a preset and six sliders.
+    #[default]
+    Convert,
+    /// Film Lab: Convert Negative (Advanced), with the film base picked from the scan and every
+    /// tone, colour and sharpening control.
+    Advanced,
+}
+
+impl Plugin {
+    pub const ALL: [Plugin; 2] = [Plugin::Convert, Plugin::Advanced];
+
+    /// Its id in PhotoCraft.
+    pub fn id(self) -> &'static str {
+        match self {
+            Plugin::Convert => "io.github.smyrgeorge.film-lab.convert",
+            Plugin::Advanced => "io.github.smyrgeorge.film-lab.convert-advanced",
+        }
+    }
+
+    /// The module's file name, in the repository's build and in a release.
+    pub fn file_name(self) -> &'static str {
+        match self {
+            Plugin::Convert => "film_lab_convert.wasm",
+            Plugin::Advanced => "film_lab_convert_advanced.wasm",
+        }
+    }
+}
 
 /// How the whole-image analysis treats the scan.
 #[derive(Clone, Debug, PartialEq)]
@@ -232,15 +260,15 @@ pub fn sample(img: &DynamicImage, x: u32, y: u32, size: u32) -> [f32; 3] {
     [(sum[0] / n * 255.0) as f32, (sum[1] / n * 255.0) as f32, (sum[2] / n * 255.0) as f32]
 }
 
-/// Where the plug-in's `.wasm` is: `--plugin`, `FILM_LAB_WASM`, or the repository's build.
-pub fn find_plugin(explicit: Option<&Path>) -> Result<PathBuf, String> {
+/// Where `plugin`'s `.wasm` is: `--plugin`, `FILM_LAB_WASM`, or the repository's build.
+pub fn find_plugin(explicit: Option<&Path>, plugin: Plugin) -> Result<PathBuf, String> {
     if let Some(p) = explicit {
         return Ok(p.to_path_buf());
     }
     if let Some(p) = std::env::var_os("FILM_LAB_WASM") {
         return Ok(PathBuf::from(p));
     }
-    let built = Path::new(env!("CARGO_MANIFEST_DIR")).join("../photocraft/target/wasm32-unknown-unknown/release/film_lab_photocraft.wasm");
+    let built = Path::new(env!("CARGO_MANIFEST_DIR")).join("../photocraft/target/wasm32-unknown-unknown/release").join(plugin.file_name());
     if built.is_file() {
         return Ok(built);
     }
@@ -264,12 +292,20 @@ fn embedded_module(wasm: &Path, levels: &Levels) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-/// Runs the plug-in with `levels` embedded on `input` through `photocraft-cli run`, writing
-/// `output`; `params` are the preset and sliders on top.
-pub fn convert_one(cli: &Path, wasm: &Path, levels: &Levels, input: &Path, output: &Path, params: &Map<String, Value>) -> Result<(), String> {
+/// Runs `plugin` (the module `wasm`) with `levels` embedded on `input` through `photocraft-cli
+/// run`, writing `output`; `params` are the preset and sliders on top.
+pub fn convert_one(
+    cli: &Path,
+    plugin: Plugin,
+    wasm: &Path,
+    levels: &Levels,
+    input: &Path,
+    output: &Path,
+    params: &Map<String, Value>,
+) -> Result<(), String> {
     let module = embedded_module(wasm, levels)?;
     let install = json!({"path": module}).to_string();
-    let run = json!({"id": PLUGIN_ID, "params": params}).to_string();
+    let run = json!({"id": plugin.id(), "params": params}).to_string();
     let status = Command::new(cli)
         .arg("run")
         .arg(input)
@@ -283,10 +319,13 @@ pub fn convert_one(cli: &Path, wasm: &Path, levels: &Levels, input: &Path, outpu
     if status?.success() { Ok(()) } else { Err("photocraft-cli failed".into()) }
 }
 
-/// Runs the plug-in with `levels` embedded on every image in `in_dir` through `photocraft-cli
-/// batch` (one measurement for the roll), writing `out_dir`; `format` is an extension or None.
+/// Runs `plugin` (the module `wasm`) with `levels` embedded on every image in `in_dir` through
+/// `photocraft-cli batch` (one measurement for the roll), writing `out_dir`; `format` is an
+/// extension or None.
+#[allow(clippy::too_many_arguments)]
 pub fn convert_roll(
     cli: &Path,
+    plugin: Plugin,
     wasm: &Path,
     levels: &Levels,
     in_dir: &Path,
@@ -297,7 +336,7 @@ pub fn convert_roll(
     let module = embedded_module(wasm, levels)?;
     let actions = json!([
         {"command": "plugin.install", "params": {"path": module}},
-        {"command": "plugin.run", "params": {"id": PLUGIN_ID, "params": params}},
+        {"command": "plugin.run", "params": {"id": plugin.id(), "params": params}},
     ]);
     let actions_path = std::env::temp_dir().join(format!("film-lab-actions-{}.json", std::process::id()));
     std::fs::write(&actions_path, actions.to_string()).map_err(|e| format!("cannot write {}: {e}", actions_path.display()))?;

@@ -1,7 +1,7 @@
 //! Whole-image analysis of synthetic negatives, and the conversion through photocraft-cli when
 //! one is available (`PHOTOCRAFT_CLI`).
 
-use film_lab_companion::{AnalyzeOptions, WbMode, analyze, convert_one, find_plugin};
+use film_lab_companion::{AnalyzeOptions, Plugin, WbMode, analyze, convert_one, find_plugin};
 use film_lab_core::{RANGE_STOPS, color, film};
 use image::{DynamicImage, ImageBuffer, Rgb};
 
@@ -87,19 +87,40 @@ fn sample_averages_a_square_on_the_info_panel_scale() {
 }
 
 #[test]
+fn the_companion_and_the_harness_name_the_same_modules() {
+    use film_lab_photocraft_harness::Plugin as Built;
+    for (ours, built) in Plugin::ALL.into_iter().zip(Built::ALL) {
+        assert_eq!((ours.id(), ours.file_name()), (built.id(), built.file_name()));
+        let wasm = film_lab_photocraft_harness::build_plugin(built).unwrap();
+        let mut host = film_lab_photocraft_harness::Host::load(&std::fs::read(&wasm).unwrap()).unwrap();
+        let manifest: serde_json::Value = serde_json::from_str(&host.manifest().unwrap()).unwrap();
+        assert_eq!(manifest["id"], ours.id(), "the id the companion runs is the one the module declares");
+        assert_eq!(
+            find_plugin(None, ours).unwrap().canonicalize().unwrap(),
+            wasm.canonicalize().unwrap(),
+            "the repository build is the default module"
+        );
+    }
+}
+
+#[test]
 fn converts_through_photocraft_cli_when_available() {
     let Some(cli) = std::env::var_os("PHOTOCRAFT_CLI") else {
         eprintln!("PHOTOCRAFT_CLI not set: skipping the photocraft-cli conversion");
         return;
     };
-    let wasm = match film_lab_photocraft_harness::build_plugin() {
+    let wasm = match film_lab_photocraft_harness::build_plugin(film_lab_photocraft_harness::Plugin::Convert) {
         Ok(w) => w,
         Err(e) => {
             eprintln!("{e}: skipping");
             return;
         }
     };
-    assert_eq!(find_plugin(None).unwrap().canonicalize().unwrap(), wasm.canonicalize().unwrap(), "the repository build is the default module");
+    assert_eq!(
+        find_plugin(None, Plugin::Convert).unwrap().canonicalize().unwrap(),
+        wasm.canonicalize().unwrap(),
+        "the repository build is the default module"
+    );
     let dir = std::env::temp_dir().join(format!("film-lab-companion-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let img = synthetic(320, 240, 16);
@@ -107,9 +128,9 @@ fn converts_through_photocraft_cli_when_available() {
     img.save(&input).unwrap();
     let levels = analyze(&img, &AnalyzeOptions { border_percent: 0.0, ..AnalyzeOptions::default() }).unwrap();
     let mut params = levels.plugin_params();
-    params.insert("preset".into(), "standard".into());
+    params.insert("preset".into(), "Standard".into());
     let output = dir.join("positive.png");
-    convert_one(std::path::Path::new(&cli), &wasm, &levels, &input, &output, &params).unwrap();
+    convert_one(std::path::Path::new(&cli), Plugin::Convert, &wasm, &levels, &input, &output, &params).unwrap();
     let out = image::open(&output).unwrap().to_rgb8();
     // The ramp's middle comes back neutral and at least middle grey (the lab rendition
     // brightens mid-tones against the scene-linear value).
