@@ -16,6 +16,15 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
           components: rustfmt, clippy
+      # ~/.cargo and both workspaces' target folders (the plug-ins build in their own). Only main
+      # saves: every branch, pull request and release tag can restore main's cache, and nothing
+      # else evicts it.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            crates/photocraft -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: fmt
         run: |
           cargo fmt --all --check
