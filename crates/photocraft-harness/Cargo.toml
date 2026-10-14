@@ -4,6 +4,7 @@ description = "Host-side checks for the PhotoCraft plug-ins: builds crates/photo
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
 publish.workspace = true
 
 [lints]

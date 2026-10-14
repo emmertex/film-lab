@@ -13,6 +13,7 @@ exclude = ["crates/photocraft"]
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.90"
+license = "MIT"
 publish = false
 
 [workspace.dependencies]

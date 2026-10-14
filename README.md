@@ -9,6 +9,7 @@
   <img alt="PhotoCraft WebAssembly plug-ins" src="https://img.shields.io/badge/PhotoCraft-WebAssembly%20plug--ins-2f7bf5?style=flat-square">
   <img alt="12 film presets" src="https://img.shields.io/badge/film%20presets-12-6b8e23?style=flat-square">
   <img alt="Status: alpha" src="https://img.shields.io/badge/status-alpha-d69e2e?style=flat-square">
+  <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square">
 </p>
 
 > [!NOTE]
@@ -254,6 +255,7 @@ scripts/
   fetch-samples.sh             the openly licensed sample negatives
   manual-test.sh               PhotoCraft with the plug-ins installed and a scan open
   screenshots.sh               the README's images and GIF
+  release.sh                   bump the version, commit, tag and push: a release
 .github/workflows/
   ci.yml                       fmt, clippy, tests, plug-in build
   release.yml                  on a tag vX.Y.Z: the CI checks, then a GitHub release with the plug-ins
@@ -289,11 +291,18 @@ runs, the companion reaches the same instance with
 ## Release
 
 The plug-ins share one version, in `crates/photocraft/Cargo.toml` (`[workspace.package]`), and
-their manifests report it to PhotoCraft. To release, bump it, commit, and push a matching tag:
+their manifests report it to PhotoCraft; the core and the companion follow it in `Cargo.toml`.
+`scripts/release.sh` bumps both, runs the CI checks, commits "Release X.Y.Z", tags `vX.Y.Z` and,
+once you confirm, pushes `main` and the tag together:
 
 ```sh
-git tag v0.1.0 && git push origin v0.1.0
+scripts/release.sh              # minor: 0.1.0 → 0.2.0
+scripts/release.sh patch        # or major, or an exact version such as 0.2.0-rc.1
+scripts/release.sh 0.1.0        # the current version: only the tag (the first release)
 ```
+
+It refuses a dirty tree, a branch other than `main`, a `main` behind `origin`, or a tag that
+already exists; `--yes` skips the question and `--no-checks` the checks.
 
 `.github/workflows/release.yml` runs the CI checks, refuses a tag that differs from that
 version, builds the modules with `--locked`, and publishes a GitHub release with
@@ -331,3 +340,9 @@ workflow) to get the modules as a build artifact without releasing anything.
   manifest validation, band splitting), `crates/ui-egui/src/filter_dialog.rs` (how a plug-in's
   dialog is drawn and labelled)
 - LightCraft: `docs/gaps.md`, `docs/target-app-parity.md` (plug-in ecosystem status)
+
+## License
+
+[MIT](LICENSE). The film names in the presets are trademarks of their makers (see
+[Presets](#presets)); the sample photographs in the screenshots have their own licences (see
+[docs/images/ATTRIBUTION.md](docs/images/ATTRIBUTION.md)).

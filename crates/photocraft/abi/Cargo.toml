@@ -4,6 +4,7 @@ description = "What the Film Lab PhotoCraft plug-ins share: the ABI v1 exports, 
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
 publish.workspace = true
 
 [lints]
