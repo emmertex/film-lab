@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use film_lab_companion::app::{AppOptions, Control, convert_in_app, find_photocraft, launch};
-use film_lab_companion::{AnalyzeOptions, Plugin, WbMode, find_plugin};
+use film_lab_companion::{AnalyzeOptions, Plugin, find_plugin};
 use image::codecs::gif::{GifEncoder, Repeat};
 use image::{Delay, Frame, ImageReader, imageops::FilterType};
 use serde_json::{Map, json};
@@ -138,7 +138,7 @@ fn drive(a: &Args, work: &Path, addr: &str, token: &str) -> Result<(), String> {
             token: token.to_string(),
             root: work.to_path_buf(),
             dialog: true,
-            analyze: AnalyzeOptions { border_percent: 8.0, wb: WbMode::Neutral, ..AnalyzeOptions::default() },
+            analyze: AnalyzeOptions::default(),
             set: Map::new(),
             plugin,
             wasm: find_plugin(None, plugin)?,

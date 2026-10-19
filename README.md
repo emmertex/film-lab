@@ -122,8 +122,9 @@ against the live preview before OK:
 film-lab app --dialog --root ~/scans --token-file ~/photocraft.token
 ```
 
-The options of `film-lab analyze` apply here too: `--border 8` leaves the outer 8 % of the scan
-out of the measurement, and `--wb neutral` balances the channel medians. `--advanced` does the
+The options of `film-lab analyze` apply here too: `--border N` leaves the outer N % of the scan
+out of the measurement (8 by default), and `--wb auto` keeps the scene's own colour instead of
+balancing the channel medians (the default, `--wb neutral`). `--advanced` does the
 same with the advanced plug-in.
 
 **3. Or open the dialog from the menu.** Once the companion has installed a plug-in, its menu
@@ -197,8 +198,11 @@ toning offsets.
 
 - **No measurement.** Without the companion's measurement in the module, the preset's typical
   mask colour stands in for the film base (or the base typed into the advanced dialog), with a
-  fixed range. The result is identical on every strip, so seam-free at any size, and right when
-  the scanning setup matches the preset.
+  fixed range per channel: wider for blue than for red, as a scan of colour negative film runs
+  (`SCAN_SPREAD` in [`crates/core/src/preset.rs`](crates/core/src/preset.rs), provisional:
+  fitted on one Ektar 100 strip so far). The result is identical on every strip, so seam-free
+  at any size, and close when the scanning setup matches the preset; the companion's
+  measurement is what makes it right for a given scan.
 - **Never per strip.** The plug-ins never measure the pixels they are given: PhotoCraft hands
   them the layer in strips of 256 rows, each in a fresh sandbox, the preview included, so a
   per-strip measurement would give every strip its own levels and show as blocks.
@@ -229,9 +233,9 @@ photocraft-cli run scan.tif \
 ```
 
 Measured with `film-lab compare`: on a lab-scanned Portra 400 frame, the companion's analysis
-with an 8 % border buffer lands every channel's mean within about 1 % of the lab's positive; on
-the Ektar 100 frame above, against the photographer's own positive, `--wb neutral` lands within
-about 4 %.
+with `--wb auto` lands every channel's mean within about 1 % of the lab's positive; on the Ektar
+100 frame above, against the photographer's own positive, the default `--wb neutral` lands
+within about 4 %, where `--wb auto` leans blue.
 
 Both plug-ins' parameters, the measurement block and the conversion are described in
 [`crates/photocraft/README.md`](crates/photocraft/README.md), and the companion in

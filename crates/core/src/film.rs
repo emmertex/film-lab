@@ -53,7 +53,13 @@ use crate::color;
 /// The inverse: the linear scan value a relative exposure `e` (≥ 1) leaves on a negative with
 /// film base `t_base`. Used to synthesise negatives in tests and to reason about levels.
 pub fn transmittance(e: f32, t_base: f32) -> f32 {
-    t_base * libm::powf(e.max(1.0), -NEGATIVE_GAMMA)
+    transmittance_at(e, t_base, NEGATIVE_GAMMA)
+}
+
+/// [`transmittance`] for a channel whose density grows by `gamma` per log-exposure: a scan of
+/// colour film, whose channels spread apart ([`crate::SCAN_SPREAD`]).
+pub fn transmittance_at(e: f32, t_base: f32, gamma: f32) -> f32 {
+    t_base * libm::powf(e.max(1.0), -gamma)
 }
 
 #[cfg(test)]

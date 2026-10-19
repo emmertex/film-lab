@@ -30,11 +30,12 @@ App options:
   --dialog            open the plug-in's dialog filled in instead of converting outright
 
 Analysis options:
-  --border N          percent of each edge left out of the analysis (default 5)
+  --border N          percent of each edge left out of the analysis (default 8)
   --black-clip N      percent of pixels allowed below black (default 0.3)
   --white-clip N      percent of pixels allowed above white (default 0.3)
-  --wb MODE           auto (default: black and white neutral per channel), neutral (medians
-                      balanced too), warm, cool
+  --wb MODE           neutral (default: black and white neutral per channel, the medians
+                      balanced too), auto (black and white only, the scene's colour kept),
+                      warm, cool
   --master FILE       convert: analyse this scan and apply its analysis to the whole folder
 
 Conversion options:

@@ -2,7 +2,7 @@
 //! one-pixel run.
 #![allow(dead_code)]
 
-use film_lab_core::{RANGE_STOPS, color, film};
+use film_lab_core::{Preset, RANGE_STOPS, color, film};
 use film_lab_photocraft_harness::{Host, MODE_RGB, Plugin, build_plugin, format_code};
 
 /// A film base in linear light (orange mask).
@@ -16,9 +16,15 @@ pub fn host(plugin: Plugin) -> Host {
     Host::load(&wasm(plugin)).unwrap()
 }
 
+/// The linear scan value of relative scene exposure `e` (≥ 1) on channel `ch`: a scan of the
+/// standard preset's film, its channels spread as the levels from a base alone expect.
+pub fn scan_linear(e: f32, ch: usize) -> f32 {
+    film::transmittance_at(e, BASE[ch], Preset::default_preset().scan_gamma()[ch])
+}
+
 /// The linear scan value of scene brightness `s` (0..1 of the positive) on channel `ch`.
 pub fn negative_linear(s: f32, ch: usize) -> f32 {
-    film::transmittance(1.0 + s * (libm::exp2f(RANGE_STOPS) - 1.0), BASE[ch])
+    scan_linear(1.0 + s * (libm::exp2f(RANGE_STOPS) - 1.0), ch)
 }
 
 /// The sRGB-encoded scan value of scene brightness `s` on channel `ch`.
@@ -35,7 +41,7 @@ pub fn base_params() -> String {
 /// A measurement block for [`BASE`]: black at the base, white at the scan value of a scene
 /// 5 stops up, no balance.
 pub fn measurement_json() -> String {
-    let five = |ch: usize| color::srgb_encode(film::transmittance(libm::exp2f(5.0), BASE[ch])) * 255.0;
+    let five = |ch: usize| color::srgb_encode(scan_linear(libm::exp2f(5.0), ch)) * 255.0;
     let base = |ch: usize| color::srgb_encode(BASE[ch]) * 255.0;
     format!(
         r#"{{"base_r": {}, "base_g": {}, "base_b": {}, "black_r": {}, "black_g": {}, "black_b": {}, "white_r": {}, "white_g": {}, "white_b": {}, "balance_r": 1, "balance_g": 1, "balance_b": 1}}"#,

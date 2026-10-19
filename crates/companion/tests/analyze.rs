@@ -26,7 +26,9 @@ fn synthetic(w: u32, h: u32, border: u32) -> DynamicImage {
 #[test]
 fn finds_the_base_and_levels_of_a_synthetic_negative() {
     let img = synthetic(400, 300, 20);
-    let levels = analyze(&img, &AnalyzeOptions { border_percent: 0.0, black_clip: 0.0, white_clip: 0.0, ..AnalyzeOptions::default() }).unwrap();
+    let levels =
+        analyze(&img, &AnalyzeOptions { border_percent: 0.0, black_clip: 0.0, white_clip: 0.0, wb: WbMode::Auto, ..AnalyzeOptions::default() })
+            .unwrap();
     for (ch, b) in BASE.iter().enumerate() {
         let base = color::srgb_encode(*b) * 255.0;
         assert!((levels.base[ch] - base).abs() < 1.5, "base {ch}: {} vs {base}", levels.base[ch]);
@@ -63,7 +65,7 @@ fn finds_the_base_and_levels_of_a_synthetic_negative() {
 #[test]
 fn border_buffer_excludes_the_edges_and_sampling_is_bounded() {
     let img = synthetic(400, 300, 20);
-    // With the 5 % border excluded the film border no longer sets the base; black moves inward.
+    // With a 10 % border excluded the film border no longer sets the base; black moves inward.
     let o = AnalyzeOptions { border_percent: 10.0, max_samples: 2_000, ..AnalyzeOptions::default() };
     let levels = analyze(&img, &o).unwrap();
     assert!(levels.samples <= 2_500, "{}", levels.samples);

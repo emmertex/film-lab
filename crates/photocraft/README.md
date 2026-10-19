@@ -123,7 +123,9 @@ therefore measure nothing themselves.
   balance, all measured on the whole scan) nothing depends on the band, so large layers
   convert without seams.
 - **Without one**, the preset's typical mask colour (or the base picked in the advanced dialog)
-  is the base and a fixed range of stops leads to white: identical on every band, seam-free, right when the scanning setup matches.
+  is the base and a fixed range per channel leads to white (wider for blue than for red, as a
+  scan of colour negative film runs: `SCAN_SPREAD` in `crates/core/src/preset.rs`, provisional):
+  identical on every band, seam-free, close when the scanning setup matches.
 
 ### The measurement block
 
@@ -147,10 +149,10 @@ profile, contrast, lights / darks, fade / glow and the soft ends act in sRGB-enc
 the toning and saturation, then sharpening.
 
 Measured with `film-lab compare`: on a lab-scanned Portra 400 frame with its lab positive,
-the companion's analysis with a border buffer of 8 % and the defaults lands every channel's
+the companion's analysis with a border buffer of 8 % and `--wb auto` lands every channel's
 mean within about 1 %; on an openly licensed Ektar 100 frame photographed against daylight (the
-README's example), `--wb neutral` or a neutral sample on a cloud lands within about 4 % of the
-author's own positive.
+README's example), the default `--wb neutral` or a neutral sample on a cloud lands within about
+4 % of the author's own positive.
 
 The host meters about 4,000 instructions per sample and runs the module in an interpreter, so
 the conversion samples each channel's transfer functions into lookup tables once per band
