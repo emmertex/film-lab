@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Map, Value, json};
 
-use crate::{AnalyzeOptions, Plugin, analyze};
+use crate::{AnalyzeOptions, Levels, Plugin, analyze};
 
 /// PhotoCraft's default control port.
 pub const DEFAULT_ADDR: &str = "127.0.0.1:7878";
@@ -91,14 +91,15 @@ impl Control {
     }
 }
 
-/// Converts the document open in PhotoCraft (or opens the plug-in's dialog filled in).
-pub fn convert_in_app(o: &AppOptions) -> Result<Value, String> {
-    let mut c = Control::connect(&o.addr, &o.token)?;
+/// Measures the document open in PhotoCraft from a flattened copy saved through the app's
+/// automation write root `root` (analysed, then deleted): the pixels the plug-in will see,
+/// whatever the app did when it opened the file (a colour profile converted to the working space,
+/// a format decoded its own way), which a measurement of the file on disk can miss.
+pub fn measure_open_document(c: &mut Control, root: &Path, o: &AnalyzeOptions) -> Result<Levels, String> {
     let state = c.call("ui.inspect", json!({}))?;
     if state.get("document").is_none_or(Value::is_null) {
         return Err("no document is open in PhotoCraft: open the scan first".into());
     }
-    // A flattened copy of the document, saved through the app's automation root, analysed, deleted.
     let name = format!("film-lab-{}.png", std::process::id());
     c.execute("image.duplicate", json!({}))?;
     let saved = c.call("app.save", json!({"path": name}));
@@ -110,11 +111,17 @@ pub fn convert_in_app(o: &AppOptions) -> Result<Value, String> {
     }
     saved?;
     closed?;
-    let path = o.root.join(&name);
+    let path = root.join(&name);
     let img = image::open(&path)
         .map_err(|e| format!("cannot read the copy PhotoCraft saved at {}: {e} (is --root the app's automation write root?)", path.display()));
     std::fs::remove_file(&path).ok();
-    let levels = analyze(&img?, &o.analyze)?;
+    analyze(&img?, o)
+}
+
+/// Converts the document open in PhotoCraft (or opens the plug-in's dialog filled in).
+pub fn convert_in_app(o: &AppOptions) -> Result<Value, String> {
+    let mut c = Control::connect(&o.addr, &o.token)?;
+    let levels = measure_open_document(&mut c, &o.root, &o.analyze)?;
     let mut params = levels.plugin_params();
     params.extend(o.set.clone());
 

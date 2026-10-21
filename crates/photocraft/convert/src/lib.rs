@@ -16,7 +16,8 @@
 //!
 //! The companion's measurement in the module ([`film_lab_photocraft::Band::measurement`]) when
 //! there is one. Without one, the preset's typical mask colour stands in for the film base, with a
-//! fixed range: identical on every band, right when the scanning setup matches the preset.
+//! fixed range per channel ([`film_lab_core::Preset::scan_gamma`]): identical on every band, close
+//! when the scanning setup matches the preset.
 //!
 //! A host may also pass `base_r/g/b` (0..255, the Info panel's values) in the JSON: they replace
 //! the preset's base when the module holds no measurement. Other parameters of the core are

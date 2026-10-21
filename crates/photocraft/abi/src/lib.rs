@@ -449,10 +449,12 @@ impl Band<'_> {
         Some(Measurement { base, black, white, balance, encoding: None })
     }
 
-    /// Levels from a film base alone (scan values in the document's encoding), for a film of the
-    /// given layer gammas: the same on every band.
+    /// Levels from a film base alone (scan values in the document's encoding), for a scan of the
+    /// given channel gammas: the same on every band. A grey document's one channel takes the
+    /// green gamma, as its base takes the green base.
     pub fn from_base(&self, base: [f32; 3], film_gamma: [f32; 3]) -> Analysis {
         let enc = self.enc;
+        let film_gamma = if self.grey() { [film_gamma[1]; 3] } else { film_gamma };
         Analysis::from_base([enc.decode(base[0]), enc.decode(base[1]), enc.decode(base[2])], film_gamma)
     }
 

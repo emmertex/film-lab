@@ -13,12 +13,25 @@
 
 use crate::{Look, NEGATIVE_GAMMA, Params, Tone, color, finite};
 
+/// How much more density each channel of a scan of colour negative film spans than the layer's
+/// own gamma gives, red, green, blue: a scan's blue runs far denser than its red (the orange
+/// mask, the dyes' side absorptions, the scanner's or camera's channel sensitivities). Only the
+/// levels derived from a base alone use it ([`Preset::scan_gamma`]); a measurement makes it
+/// irrelevant.
+///
+/// Provisional: fitted on three frames of one Kodak Ektar 100 strip photographed against
+/// daylight, matching the colour of each frame's mean to the photographer's own positive (the
+/// best fit per preset ran 0.62 to 0.78 for red and 1.30 to 1.52 for blue). Without it, those
+/// frames came out strongly blue. More scans are needed to settle it.
+pub const SCAN_SPREAD: [f32; 3] = [0.7, 1.0, 1.4];
+
 /// One recipe.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Preset {
     /// The parameter value and its menu entry, as shown ([`Preset::parse`] takes any spelling).
     pub name: &'static str,
-    /// Density per log-exposure of the red, green and blue layers.
+    /// Density per log-exposure of the red, green and blue layers (as the film's data gives
+    /// it; a scan spreads them further, [`SCAN_SPREAD`]).
     pub gamma: [f32; 3],
     /// Typical mask colour of an unexposed, normally scanned frame, sRGB-encoded 0..1: the
     /// fallback film base.
@@ -280,6 +293,15 @@ impl Preset {
         [color::srgb_decode(self.base[0]), color::srgb_decode(self.base[1]), color::srgb_decode(self.base[2])]
     }
 
+    /// Density per log-exposure of each channel as a scan sees it: [`Preset::gamma`] spread by
+    /// [`SCAN_SPREAD`] for colour film, as it is for black-and-white (no mask, one dye).
+    pub fn scan_gamma(&self) -> [f32; 3] {
+        if self.monochrome {
+            return self.gamma;
+        }
+        [self.gamma[0] * SCAN_SPREAD[0], self.gamma[1] * SCAN_SPREAD[1], self.gamma[2] * SCAN_SPREAD[2]]
+    }
+
     /// The conversion parameters for this preset with `s` on top.
     pub fn params(&self, s: &Sliders) -> Params {
         let d = Params::default();
@@ -300,7 +322,7 @@ impl Preset {
             lows_green: self.lows[1],
             lows_blue: self.lows[2],
             monochrome: self.monochrome,
-            film_gamma: self.gamma,
+            film_gamma: self.scan_gamma(),
             ..d
         }
     }
@@ -380,6 +402,15 @@ mod tests {
         assert_eq!(p.contrast, golden.contrast - 8.0);
         assert_eq!(p.exposure, 0.0);
         assert_eq!(p.look, Look::LabWarm);
-        assert_eq!(p.film_gamma, golden.gamma);
+        assert_eq!(p.film_gamma, golden.scan_gamma());
+    }
+
+    #[test]
+    fn a_scan_spreads_colour_layers_but_not_black_and_white() {
+        let portra = Preset::parse("portra 400").unwrap();
+        let g = portra.scan_gamma();
+        assert!(g[0] < portra.gamma[0] && g[1] == portra.gamma[1] && g[2] > portra.gamma[2], "{g:?}");
+        let mono = Preset::parse("monochrome").unwrap();
+        assert_eq!(mono.scan_gamma(), mono.gamma);
     }
 }

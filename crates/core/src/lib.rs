@@ -47,7 +47,7 @@ pub mod tone;
 pub use analysis::{Analysis, ValueHistogram};
 pub use color::Encoding;
 pub use look::{Look, WbPreset};
-pub use preset::{PRESETS, Preset, Sliders};
+pub use preset::{PRESETS, Preset, SCAN_SPREAD, Sliders};
 pub use sharpen::Sharpen;
 pub use tone::Tone;
 
@@ -133,8 +133,9 @@ pub struct Params {
     pub lows_range: f32,
     /// Black-and-white film: the positive is the luminance (toning still colours it).
     pub monochrome: bool,
-    /// Density per log-exposure of the red, green and blue layers, for levels derived from a
-    /// base alone ([`Analysis::from_base`]); a measured range makes it irrelevant.
+    /// Density per log-exposure of the red, green and blue channels of the scan, for levels
+    /// derived from a base alone ([`Analysis::from_base`]); a measured range makes it irrelevant.
+    /// A preset sets it to its [`Preset::scan_gamma`].
     pub film_gamma: [f32; 3],
     pub sharpen: Sharpen,
     /// 0..100.

@@ -7,12 +7,13 @@
 //! cargo run -p film-lab-companion --example manual_test -- --negative my-scan.tif
 //! ```
 //!
-//! Launches PhotoCraft on its control channel with a work folder as its automation roots,
-//! installs both plug-ins (Convert Negative and Convert Negative (Advanced)) from the repository's
-//! build with the companion's measurement of the negative written inside (so Filter › Plug-ins ›
-//! Film Lab: Convert Negative… converts the way `film-lab app` does; `--plain` installs the bare
-//! modules, which fall back to the preset's base, or to the base picked in the advanced dialog),
-//! opens the negative, and stays attached until the app quits (Ctrl-C quits both). While it runs, the
+//! Launches PhotoCraft on its control channel with a work folder as its automation roots, opens
+//! the negative, measures it the way `film-lab app` does (from a copy the app saves, so the
+//! measurement is of the pixels the plug-in gets, whatever the app did on open), installs both
+//! plug-ins (Convert Negative and Convert Negative (Advanced)) from the repository's build with
+//! that measurement written inside (`--plain` installs the bare modules, which fall back to the
+//! preset's base, or to the base picked in the advanced dialog), and stays attached until the app
+//! quits (Ctrl-C quits both). While it runs, the
 //! companion reaches the same instance: `film-lab app --dialog --root WORK --token-file
 //! WORK/token`.
 //!
@@ -24,8 +25,8 @@
 
 use std::path::{Path, PathBuf};
 
-use film_lab_companion::app::{Control, DEFAULT_ADDR, Launched, base64, find_photocraft, launch};
-use film_lab_companion::{AnalyzeOptions, Plugin, WbMode, analyze, find_plugin};
+use film_lab_companion::app::{Control, DEFAULT_ADDR, Launched, base64, find_photocraft, launch, measure_open_document};
+use film_lab_companion::{AnalyzeOptions, Plugin, WbMode, find_plugin};
 use serde_json::json;
 
 struct Args {
@@ -93,14 +94,6 @@ fn run() -> Result<(), String> {
     for path in &paths {
         modules.push(std::fs::read(path).map_err(|e| format!("cannot read the plug-in {}: {e}", path.display()))?);
     }
-    if !a.plain {
-        let img = image::open(&a.negative).map_err(|e| format!("cannot read {}: {e}", a.negative.display()))?;
-        let levels = analyze(&img, &a.analyze)?;
-        println!("measurement from {} pixels: {}", levels.samples, serde_json::Value::Object(levels.measurement()));
-        for m in &mut modules {
-            *m = levels.embed(m)?;
-        }
-    }
 
     // The negative goes into the work folder, the only place the app may open files from.
     std::fs::create_dir_all(&a.work).map_err(|e| format!("cannot create {}: {e}", a.work.display()))?;
@@ -110,7 +103,7 @@ fn run() -> Result<(), String> {
 
     println!("starting {} on port {}, automation root {}", photocraft.display(), a.port, work.display());
     let mut app = launch(&photocraft, &work, a.port)?;
-    if let Err(e) = prepare(&app, &name, &modules) {
+    if let Err(e) = prepare(&app, &work, &name, &modules, (!a.plain).then_some(&a.analyze)) {
         app.child.kill().ok();
         app.child.wait().ok();
         return Err(e);
@@ -134,13 +127,25 @@ fn run() -> Result<(), String> {
     Ok(())
 }
 
-/// Installs `modules` and opens `name` in the launched app.
-fn prepare(app: &Launched, name: &str, modules: &[Vec<u8>]) -> Result<(), String> {
+/// Installs `modules`, opens `name` in the launched app, and with `analyze` (none: the bare
+/// modules) measures it there and installs them again with the measurement inside.
+fn prepare(app: &Launched, work: &Path, name: &str, modules: &[Vec<u8>], analyze: Option<&AnalyzeOptions>) -> Result<(), String> {
     let mut c = Control::connect(&app.addr, &app.token)?;
+    // Installed before the document opens: PhotoCraft brings its macOS menu bar up to date when
+    // a document opens, not when a plug-in is installed over the channel, so a module installed
+    // only afterwards is missing from Filter › Plug-ins until the next click in the window.
+    // Replacing it later under the same id leaves the menu as it is.
     for module in modules {
         c.execute("plugin.install", json!({"data": base64(module), "replace": true}))?;
     }
     c.call("app.open", json!({"path": name}))?;
+    if let Some(o) = analyze {
+        let levels = measure_open_document(&mut c, work, o)?;
+        println!("measurement from {} pixels: {}", levels.samples, serde_json::Value::Object(levels.measurement()));
+        for module in modules {
+            c.execute("plugin.install", json!({"data": base64(&levels.embed(module)?), "replace": true}))?;
+        }
+    }
     c.call("ui.set", json!({"fit": true})).ok();
     Ok(())
 }

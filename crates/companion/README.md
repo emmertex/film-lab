@@ -31,9 +31,9 @@ before OK. `--connect` picks another port; the token also comes from
 
 | Option | What |
 |---|---|
-| `--border N` | percent of each edge left out of the analysis (film holder, sprocket holes); default 5 |
+| `--border N` | percent of each edge left out of the analysis (film holder, sprocket holes); default 8 |
 | `--black-clip N`, `--white-clip N` | percent of pixels allowed below black / above white; default 0.3 |
-| `--wb auto\|neutral\|warm\|cool` | `auto` (default): black and white neutral per channel, the scene's own colour kept; `neutral`: the channel medians balanced too (per-channel gammas, `balance_*`), which over-corrects scenes dominated by one colour; `warm` / `cool`: auto plus a temperature offset |
+| `--wb neutral\|auto\|warm\|cool` | `neutral` (default): black and white neutral per channel and the channel medians balanced too (per-channel gammas, `balance_*`), which over-corrects scenes dominated by one colour; `auto`: black and white only, the scene's own colour kept, along with any mid-tone cast; `warm` / `cool`: auto plus a temperature offset |
 | `--master FILE` | for a folder: the scan whose analysis applies to the whole roll (the "match" workflow) |
 | `--preset NAME` | the film preset, spelled any way (`portra400`, `Portra 400`): Standard, Portra 160, Portra 400, Ektar 100, Gold 200, ColorPlus 200, UltraMax 400, Superia 400, C200, Pro 400H, CineStill 800, Monochrome |
 | `--set KEY=VALUE` | a slider on top: `exposure=0.5`, `brightness=-10`, `contrast=10`, `temp=8`, `tint=-4`, `saturation=10`; with `--advanced` any of its controls too, by key, a menu's option as the dialog shows it (`filmBaseRed=205`, `'toneCurve=Cinematic Rich'`, `sharpening=Lab`, …) |
@@ -57,10 +57,11 @@ the scene (a cloud, a wall) to pass as the neutral sample when a conversion keep
 
 `compare` resamples both images to one grid and prints per-channel mean and percentiles, a 4 × 4
 grid of mean colours and the differences: the tool used to tune the defaults against reference
-positives. On a lab-scanned Portra 400 frame, `convert --border 8` lands every channel's mean
+positives. On a lab-scanned Portra 400 frame, `convert --wb auto` lands every channel's mean
 within about 1 % of the lab's positive; on the openly licensed Ektar 100 frame from
 `scripts/fetch-samples.sh`, whose unexposed gap is overexposed by the daylight behind the strip,
-`convert --border 8 --wb neutral` lands within about 4 % of the author's positive.
+`convert` (the default `--wb neutral`) lands within about 4 % of the author's positive, where
+`--wb auto` leans blue.
 
 The `screenshots` example (`scripts/screenshots.sh`) drives PhotoCraft through the automatic
 mode and writes the repository README's screenshots and `flow.gif`; it is how the images are

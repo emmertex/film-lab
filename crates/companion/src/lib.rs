@@ -66,7 +66,7 @@ pub struct AnalyzeOptions {
 
 impl Default for AnalyzeOptions {
     fn default() -> Self {
-        Self { border_percent: 5.0, base_clip: 0.1, black_clip: 0.3, white_clip: 0.3, wb: WbMode::Auto, max_samples: 1_000_000 }
+        Self { border_percent: 8.0, base_clip: 0.1, black_clip: 0.3, white_clip: 0.3, wb: WbMode::Neutral, max_samples: 1_000_000 }
     }
 }
 
@@ -74,11 +74,13 @@ impl Default for AnalyzeOptions {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum WbMode {
     /// Levels per channel: the black and white points are neutral, the scene's own colour
-    /// stays (a green garden stays green). Matches a lab conversion closely.
-    #[default]
+    /// stays (a green garden stays green), but so does any cast in the mid-tones: on the Ektar
+    /// 100 sample they lean blue.
     Auto,
     /// Auto, then each channel's median brought to the common median with a per-channel gamma:
-    /// a grey scene average, which over-corrects scenes dominated by one colour.
+    /// a grey scene average, which over-corrects scenes dominated by one colour. The default:
+    /// the closest to the reference positives.
+    #[default]
     Neutral,
     /// Auto, then a touch warmer.
     Warm,

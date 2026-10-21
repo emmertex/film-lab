@@ -10,11 +10,13 @@
 //! ```
 //!
 //! The negative has a film border of the base colour around the frame (sample it, or crop it
-//! away before an `auto` analysis). It prints the base as the plug-in's `base_*` parameters.
+//! away before an analysis). Its channels spread apart the way a scan's do, as the standard
+//! preset expects when it has only the base to go on. It prints the base as the plug-in's
+//! `base_*` parameters.
 
 use std::path::Path;
 
-use film_lab_core::{RANGE_STOPS, color, film};
+use film_lab_core::{Preset, RANGE_STOPS, color, film};
 
 const BASE: [f32; 3] = [0.6, 0.35, 0.15];
 const W: u32 = 640;
@@ -65,6 +67,7 @@ fn main() {
     let dir = Path::new(&dir);
     std::fs::create_dir_all(dir).unwrap();
     let white = libm::exp2f(RANGE_STOPS) - 1.0;
+    let gamma = Preset::default_preset().scan_gamma();
     let mut neg = Vec::with_capacity((W * H * 3) as usize);
     let mut pos = Vec::with_capacity((W * H * 3) as usize);
     for y in 0..H {
@@ -72,7 +75,7 @@ fn main() {
             let border = x < BORDER || y < BORDER || x >= W - BORDER || y >= H - BORDER;
             let s = if border { [0.0; 3] } else { scene(x, y) };
             for ch in 0..3 {
-                let t = film::transmittance(1.0 + s[ch].clamp(0.0, 1.0) * white, BASE[ch]);
+                let t = film::transmittance_at(1.0 + s[ch].clamp(0.0, 1.0) * white, BASE[ch], gamma[ch]);
                 neg.push((color::srgb_encode(t) * 255.0).round() as u8);
                 pos.push((color::srgb_encode(s[ch]) * 255.0).round() as u8);
             }
