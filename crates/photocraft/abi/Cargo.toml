@@ -12,4 +12,3 @@ workspace = true
 
 [dependencies]
 film-lab-core = { workspace = true }
-libm = "0.2"

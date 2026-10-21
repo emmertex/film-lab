@@ -20,12 +20,13 @@
 //! A host with a whole-image pass (LightCraft Classic's pixel filters) calls the optional
 //! `pc_analyze(buf, len, w, h, channels, format, params, params_len) -> i64` once on a whole,
 //! downsampled frame and passes the JSON object it returns (`len << 32 | ptr`, 0 = nothing) back
-//! to every `pc_filter` call as `_analysis`. [`analyze`] runs the companion's measurement there;
-//! [`Band::measurement`] prefers `_analysis` over the block, so PhotoCraft (which never calls it)
-//! behaves as before.
+//! to every `pc_filter` call as `_analysis`. [`analyze`] runs the companion's measurement there
+//! ([`film_lab_core::measure`], the code `film-lab analyze` runs too); [`Band::measurement`]
+//! prefers `_analysis` over the block, so PhotoCraft (which never calls it) behaves as before.
+//! The README's `pc_analyze` section is the contract: the signature, the packing and the JSON.
 #![no_std]
 
-use film_lab_core::{Analysis, Converter, Encoding, Params, Sharpen, Tables, ValueHistogram, params, sharpen};
+use film_lab_core::{Analysis, Converter, Encoding, MeasureOptions, Params, Sharpen, Tables, ValueHistogram, params, sharpen};
 
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo) -> ! {
@@ -175,6 +176,14 @@ pub struct Measurement {
 }
 
 impl Measurement {
+    /// The measurement for a grey document, whichever source it came from: every triple (levels
+    /// and balance) takes its first channel, as a grey document's colour parameters take their
+    /// first key ([`Band::colour_param`]). Measurements of grey frames have equal channels anyway.
+    pub fn grey(self) -> Self {
+        let first = |v: [f32; 3]| [v[0]; 3];
+        Self { base: first(self.base), black: first(self.black), white: first(self.white), balance: first(self.balance), ..self }
+    }
+
     /// The levels these scan values give, or `None` when a channel has no range. `enc` is the
     /// band's encoding, used unless the measurement names its own.
     pub fn analysis(&self, enc: Encoding) -> Option<Analysis> {
@@ -191,172 +200,216 @@ impl Measurement {
     }
 }
 
-/// The companion's defaults (`AnalyzeOptions`): each edge's share left out, and the shares of the
-/// brightest samples above the base and of samples below black / above white.
-const BORDER: f32 = 0.05;
-const BASE_CLIP: f32 = 0.001;
-const BLACK_CLIP: f32 = 0.003;
-const WHITE_CLIP: f32 = 0.003;
-/// Samples the measurement looks at, at most (a regular grid).
-const MAX_SAMPLES: usize = 1_000_000;
-
 /// The histogram (12 KiB) and the JSON `pc_analyze` returns live here: no allocator, and too
 /// much for the stack.
 static mut HISTOGRAM: ValueHistogram = ValueHistogram::new();
-static mut ANALYSIS_OUT: [u8; 512] = [0; 512];
+static mut ANALYSIS_OUT: [u8; 256] = [0; 256];
 
-/// A `core::fmt::Write` into a fixed byte buffer.
+/// JSON written into a fixed byte buffer by hand: `core::fmt`'s float formatting alone would add
+/// some 20 KB to each module. `ok` turns false once something didn't fit.
 struct Out<'a> {
     buf: &'a mut [u8],
     at: usize,
+    ok: bool,
 }
 
-impl core::fmt::Write for Out<'_> {
-    fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        let end = self.at.checked_add(s.len()).ok_or(core::fmt::Error)?;
-        self.buf.get_mut(self.at..end).ok_or(core::fmt::Error)?.copy_from_slice(s.as_bytes());
-        self.at = end;
-        Ok(())
+impl Out<'_> {
+    fn bytes(&mut self, b: &[u8]) {
+        match self.at.checked_add(b.len()).and_then(|end| Some((end, self.buf.get_mut(self.at..end)?))) {
+            Some((end, dst)) => {
+                dst.copy_from_slice(b);
+                self.at = end;
+            }
+            None => self.ok = false,
+        }
+    }
+
+    fn uint(&mut self, mut v: u32) {
+        let mut digits = [0u8; 10];
+        let mut i = digits.len();
+        loop {
+            i -= 1;
+            if let Some(d) = digits.get_mut(i) {
+                *d = b'0' + (v % 10) as u8;
+            }
+            v /= 10;
+            if v == 0 || i == 0 {
+                break;
+            }
+        }
+        self.bytes(digits.get(i..).unwrap_or(&[]));
+    }
+
+    /// A non-negative value rounded to `places` (1..=3) decimals; negative or NaN is written as 0.
+    fn fixed(&mut self, v: f32, places: u32) {
+        let scale = 10u32.pow(places);
+        let n = (v * scale as f32 + 0.5) as u32; // saturating: NaN and negatives give 0
+        self.uint(n / scale);
+        self.bytes(b".");
+        let frac = n % scale;
+        let mut div = scale / 10;
+        while div > 0 {
+            self.bytes(&[b'0' + (frac / div % 10) as u8]);
+            div /= 10;
+        }
+    }
+
+    fn triple(&mut self, key: &[u8], v: [f32; 3], places: u32) {
+        self.bytes(b",\"");
+        self.bytes(key);
+        self.bytes(b"\":[");
+        for (i, x) in v.into_iter().enumerate() {
+            if i > 0 {
+                self.bytes(b",");
+            }
+            self.fixed(x, places);
+        }
+        self.bytes(b"]");
     }
 }
 
-/// `pc_analyze`: the companion's whole-scan measurement (`film-lab-companion`'s `analyze` with
-/// its default options) on the frame `band` holds. Values are sRGB-encoded scan values on the
-/// 0..255 scale whatever the input encoding, the way the companion reports them. Returns
-/// `len << 32 | ptr` of the JSON, or 0 when there is nothing to measure.
+/// `pc_analyze`: the companion's whole-scan measurement ([`film_lab_core::measure`] with
+/// [`MeasureOptions::DEFAULT`], the companion's default options) on the frame `band` holds. The
+/// values are sRGB-encoded scan values on the 0..255 scale whatever the input encoding, the way
+/// the companion reports them. Returns `len << 32 | ptr` of the JSON, or 0 when there is nothing
+/// to measure.
 pub fn analyze(band: &Band) -> i64 {
     // SAFETY: a wasm instance runs one call at a time, and nothing else reaches the histogram.
     let hist = unsafe { &mut *core::ptr::addr_of_mut!(HISTOGRAM) };
-    *hist = ValueHistogram::new();
-    let (w, h, n) = (band.width, band.height, band.channels);
-    let (bx, by) = ((w as f32 * BORDER) as usize, (h as f32 * BORDER) as usize);
-    let (x0, x1, y0, y1) = (bx, w.saturating_sub(bx), by, h.saturating_sub(by));
-    if x1 <= x0 || y1 <= y0 || n == 0 {
-        return 0;
-    }
-    let area = (x1 - x0) * (y1 - y0);
-    let step = (libm::ceilf(libm::sqrtf(area as f32 / MAX_SAMPLES as f32)) as usize).max(1);
-    let enc = band.enc;
-    for y in (y0..y1).step_by(step) {
-        for x in (x0..x1).step_by(step) {
-            let Some(at) = y.checked_mul(w).and_then(|i| i.checked_add(x)).and_then(|i| i.checked_mul(n)) else { continue };
-            let Some(pix) = band.px.get(at..at.saturating_add(n)) else { continue };
-            if !Band::opaque(band.alpha, n, pix) {
-                continue;
-            }
-            let c0 = pix.first().copied().unwrap_or(0.0);
-            let rgb = if band.grey() { [c0; 3] } else { [c0, pix.get(1).copied().unwrap_or(c0), pix.get(2).copied().unwrap_or(c0)] };
-            hist.push(Encoding::Srgb.encode3([enc.decode(rgb[0]), enc.decode(rgb[1]), enc.decode(rgb[2])]));
+    let (w, n, enc, grey, alpha) = (band.width, band.channels, band.enc, band.grey(), band.alpha);
+    let px: &[f32] = band.px;
+    let pixel = |x: usize, y: usize| {
+        let at = y.checked_mul(w)?.checked_add(x)?.checked_mul(n)?;
+        let pix = px.get(at..at.checked_add(n)?)?;
+        if !Band::opaque(alpha, n, pix) {
+            return None;
         }
-    }
-    let q = |ch: usize, f: f32| hist.quantile(ch, f).map(|v| v * 255.0);
-    let (mut base, mut black, mut white) = ([0.0f32; 3], [0.0f32; 3], [0.0f32; 3]);
-    for ch in 0..3 {
-        let (Some(b), Some(k), Some(wh)) = (q(ch, 1.0 - BASE_CLIP), q(ch, 1.0 - BLACK_CLIP), q(ch, WHITE_CLIP)) else { return 0 };
-        if wh >= k {
-            return 0; // no tonal range: a flat frame
-        }
-        (base[ch], black[ch], white[ch]) = (b, k, wh);
-    }
+        let c0 = *pix.first()?;
+        let rgb = if grey { [c0; 3] } else { [c0, *pix.get(1)?, *pix.get(2)?] };
+        Some(if enc == Encoding::Srgb { rgb } else { Encoding::Srgb.encode3([enc.decode(rgb[0]), enc.decode(rgb[1]), enc.decode(rgb[2])]) })
+    };
+    let Ok(m) = film_lab_core::measure(band.width, band.height, &MeasureOptions::DEFAULT, hist, pixel) else { return 0 };
+
     // SAFETY: as the histogram's.
     let buf = unsafe { &mut *core::ptr::addr_of_mut!(ANALYSIS_OUT) };
-    let mut out = Out { buf, at: 0 };
-    let r = |v: f32| libm::roundf(v * 10.0) / 10.0;
-    let ok = core::fmt::write(
-        &mut out,
-        format_args!(
-            r#"{{"filmlab":1,"scale":"srgb255","base":[{},{},{}],"black":[{},{},{}],"white":[{},{},{}],"balance":[1,1,1],"samples":{}}}"#,
-            r(base[0]),
-            r(base[1]),
-            r(base[2]),
-            r(black[0]),
-            r(black[1]),
-            r(black[2]),
-            r(white[0]),
-            r(white[1]),
-            r(white[2]),
-            hist.count()
-        ),
-    );
-    if ok.is_err() {
+    let mut out = Out { buf, at: 0, ok: true };
+    out.bytes(br#"{"filmlab":1,"scale":"srgb255""#);
+    out.triple(b"base", m.base, 1);
+    out.triple(b"black", m.black, 1);
+    out.triple(b"white", m.white, 1);
+    out.triple(b"balance", m.balance, 3);
+    out.bytes(br#","samples":"#);
+    out.uint(m.samples);
+    out.bytes(b"}");
+    if !out.ok {
         return 0;
     }
     ((out.at as i64) << 32) | (out.buf.as_ptr() as usize as i64)
 }
 
-/// The object under the top-level key `"key"` (from `{` to its matching `}`), if there is one.
-fn object<'a>(json: &'a [u8], key: &str) -> Option<&'a [u8]> {
-    let needle_len = key.len().checked_add(2)?;
-    let mut from = 0;
-    loop {
-        let i = json
-            .get(from..)?
-            .windows(needle_len)
-            .position(|w| w.first() == Some(&b'"') && w.last() == Some(&b'"') && w.get(1..needle_len - 1) == Some(key.as_bytes()))?;
-        let after = from.checked_add(i)?.checked_add(needle_len)?;
-        let rest = json.get(after..)?;
-        let rest = rest.get(rest.iter().position(|b| !b.is_ascii_whitespace())?..)?;
-        if let Some(r) = rest.strip_prefix(b":") {
-            let start = r.iter().position(|b| !b.is_ascii_whitespace())?;
-            let r = r.get(start..)?;
-            if r.first() != Some(&b'{') {
+/// A JSON reader just big enough for `_analysis`, nesting- and escape-aware: no allocator, so no
+/// JSON library. Anything it can't read is `None`, and the plug-in falls back as without one.
+mod json {
+    fn skip_ws(s: &[u8]) -> &[u8] {
+        s.get(s.iter().position(|b| !b.is_ascii_whitespace()).unwrap_or(s.len())..).unwrap_or(&[])
+    }
+
+    /// The length of the string `s` starts with (quotes included; `\"` and `\\` honoured).
+    fn string_len(s: &[u8]) -> Option<usize> {
+        let mut i = 1usize;
+        loop {
+            match s.get(i)? {
+                b'\\' => i = i.checked_add(2)?,
+                b'"' => return i.checked_add(1),
+                _ => i = i.checked_add(1)?,
+            }
+        }
+    }
+
+    /// The length of the value `s` starts with: a string, an object or array (strings and nesting
+    /// inside it honoured), or a scalar up to the next delimiter.
+    fn value_len(s: &[u8]) -> Option<usize> {
+        match s.first()? {
+            b'"' => string_len(s),
+            b'{' | b'[' => {
+                let (mut depth, mut i) = (0usize, 0usize);
+                while let Some(b) = s.get(i) {
+                    match b {
+                        b'"' => {
+                            i = i.checked_add(string_len(s.get(i..)?)?)?;
+                            continue;
+                        }
+                        b'{' | b'[' => depth = depth.checked_add(1)?,
+                        b'}' | b']' => {
+                            depth = depth.checked_sub(1)?;
+                            if depth == 0 {
+                                return i.checked_add(1);
+                            }
+                        }
+                        _ => {}
+                    }
+                    i = i.checked_add(1)?;
+                }
+                None
+            }
+            _ => Some(s.iter().position(|b| matches!(b, b',' | b'}' | b']') || b.is_ascii_whitespace()).unwrap_or(s.len())),
+        }
+    }
+
+    /// The value of the top-level member `key` of the object `obj` (nested objects and strings are
+    /// skipped whole, so a key inside them never matches).
+    pub fn member<'a>(obj: &'a [u8], key: &str) -> Option<&'a [u8]> {
+        let mut s = skip_ws(obj).strip_prefix(b"{")?;
+        loop {
+            s = skip_ws(s);
+            if s.first() == Some(&b'}') {
                 return None;
             }
-            let mut depth = 0usize;
-            let mut in_str = false;
-            for (j, b) in r.iter().enumerate() {
-                match (*b, in_str) {
-                    (b'"', _) => in_str = !in_str,
-                    (b'{', false) => depth += 1,
-                    (b'}', false) => {
-                        depth = depth.saturating_sub(1);
-                        if depth == 0 {
-                            return r.get(..=j);
-                        }
-                    }
-                    _ => {}
-                }
+            let klen = string_len(s).filter(|_| s.first() == Some(&b'"'))?;
+            let k = s.get(1..klen - 1)?;
+            s = skip_ws(s.get(klen..)?).strip_prefix(b":")?;
+            s = skip_ws(s);
+            let vlen = value_len(s)?;
+            if k == key.as_bytes() {
+                return s.get(..vlen);
             }
-            return None;
+            s = skip_ws(s.get(vlen..)?);
+            s = s.strip_prefix(b",").unwrap_or(s);
         }
-        from = after;
+    }
+
+    /// The number under `key` in `obj`, if it is one and finite.
+    pub fn number(obj: &[u8], key: &str) -> Option<f32> {
+        core::str::from_utf8(member(obj, key)?).ok()?.parse::<f32>().ok().filter(|v| v.is_finite())
+    }
+
+    /// The three finite numbers of the array under `key` in `obj` (`[r, g, b]`).
+    pub fn triple(obj: &[u8], key: &str) -> Option<[f32; 3]> {
+        let a = member(obj, key)?;
+        let inner = core::str::from_utf8(a.strip_prefix(b"[")?.strip_suffix(b"]")?).ok()?;
+        let mut v = [0.0f32; 3];
+        let mut it = inner.split(',');
+        for x in v.iter_mut() {
+            *x = it.next()?.trim().parse::<f32>().ok().filter(|f| f.is_finite())?;
+        }
+        if it.next().is_some() { None } else { Some(v) }
     }
 }
 
-/// The three numbers of the array under `"key"` in `json` (`[r, g, b]`).
-fn triple(json: &[u8], key: &str) -> Option<[f32; 3]> {
-    let needle_len = key.len().checked_add(2)?;
-    let i = json
-        .windows(needle_len)
-        .position(|w| w.first() == Some(&b'"') && w.last() == Some(&b'"') && w.get(1..needle_len - 1) == Some(key.as_bytes()))?;
-    let rest = json.get(i.checked_add(needle_len)?..)?;
-    let open = rest.iter().position(|b| *b == b'[')?;
-    let close = rest.iter().position(|b| *b == b']')?;
-    let inner = core::str::from_utf8(rest.get(open.checked_add(1)?..close)?).ok()?;
-    let mut v = [0.0f32; 3];
-    let mut it = inner.split(',');
-    for x in v.iter_mut() {
-        *x = it.next()?.trim().parse::<f32>().ok().filter(|f| f.is_finite())?;
-    }
-    if it.next().is_some() { None } else { Some(v) }
-}
-
-/// A measurement from the host's `_analysis` (what [`analyze`] returned), if `json` has one.
-fn host_measurement(json: &[u8], grey: bool) -> Option<Measurement> {
-    let a = object(json, "_analysis")?;
-    if params::number(a, "filmlab")? != 1.0 {
+/// A measurement from the host's `_analysis` (the object [`analyze`] returned), if `params` has
+/// one: `filmlab` 1, `scale` `"srgb255"`, and `base`, `black`, `white` (and optionally `balance`)
+/// as `[r, g, b]`. Other members are ignored.
+fn host_measurement(params: &[u8]) -> Option<Measurement> {
+    let a = json::member(params, "_analysis")?;
+    if json::number(a, "filmlab")? != 1.0 || json::member(a, "scale")? != br#""srgb255""# {
         return None;
     }
-    let s = |v: [f32; 3]| {
-        let v = [v[0] / 255.0, v[1] / 255.0, v[2] / 255.0];
-        if grey { [v[1]; 3] } else { v }
-    };
-    let balance = triple(a, "balance").unwrap_or([1.0; 3]);
+    let s = |v: [f32; 3]| [v[0] / 255.0, v[1] / 255.0, v[2] / 255.0];
     Some(Measurement {
-        base: s(triple(a, "base")?),
-        black: s(triple(a, "black")?),
-        white: s(triple(a, "white")?),
-        balance: if grey { [1.0; 3] } else { balance },
+        base: s(json::triple(a, "base")?),
+        black: s(json::triple(a, "black")?),
+        white: s(json::triple(a, "white")?),
+        balance: json::triple(a, "balance").unwrap_or([1.0; 3]),
         encoding: Some(Encoding::Srgb),
     })
 }
@@ -436,17 +489,15 @@ impl Band<'_> {
     /// The whole-image measurement: the host's `_analysis` ([`analyze`]'s result) when the
     /// parameters carry one, else the companion's, when the module holds one.
     pub fn measurement(&self) -> Option<Measurement> {
-        if let Some(m) = host_measurement(self.json, self.grey()) {
-            return Some(m);
-        }
-        let b = measurement_block();
-        let grey = self.grey();
-        let base = colour(b, ["base_r", "base_g", "base_b"], grey)?;
-        let black = colour(b, ["black_r", "black_g", "black_b"], grey).unwrap_or(base);
-        let white = colour(b, ["white_r", "white_g", "white_b"], grey)?;
-        let bal = |k: &str| params::number(b, k).unwrap_or(1.0);
-        let balance = if grey { [bal("balance_r"); 3] } else { [bal("balance_r"), bal("balance_g"), bal("balance_b")] };
-        Some(Measurement { base, black, white, balance, encoding: None })
+        let m = host_measurement(self.json).or_else(|| {
+            let b = measurement_block();
+            let base = colour(b, ["base_r", "base_g", "base_b"], false)?;
+            let black = colour(b, ["black_r", "black_g", "black_b"], false).unwrap_or(base);
+            let white = colour(b, ["white_r", "white_g", "white_b"], false)?;
+            let bal = |k: &str| params::number(b, k).unwrap_or(1.0);
+            Some(Measurement { base, black, white, balance: [bal("balance_r"), bal("balance_g"), bal("balance_b")], encoding: None })
+        })?;
+        Some(if self.grey() { m.grey() } else { m })
     }
 
     /// Levels from a film base alone (scan values in the document's encoding), for a scan of the
